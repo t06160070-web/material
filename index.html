@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>機台領料追蹤與即時看板系統</title>
+    <!-- 引入 SheetJS (XLSX) 函式庫以支援真正微軟 Excel (.xlsx) 匯出 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 10px; background-color: #f4f6f9; color: #333; font-size: 16px; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
+        h2 { font-size: 20px; border-bottom: 3px solid #007bff; padding-bottom: 8px; margin-top: 5px; margin-bottom: 15px; text-align: center; }
+        
+        .dashboard { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
+        .dash-card { background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .dash-title-nesting { color: #0d47a1; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        .dash-title-saw { color: #1b5e20; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        .dash-value { font-size: 16px; font-weight: bold; display: flex; justify-content: space-around; }
+        .text-wait { color: #dc3545; }
+        .text-done { color: #28a745; }
+
+        .form-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+        input, select, button { padding: 12px; font-size: 16px; border: 1px solid #bbb; border-radius: 8px; height: 50px; box-sizing: border-box; width: 100%; -webkit-appearance: none; }
+        input[type="number"] { -moz-appearance: textfield; }
+        select { background-color: white; cursor: pointer; }
+        
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        button:active { background-color: #004085; }
+        .btn-success { background-color: #28a745; }
+        .btn-success:active { background-color: #1e7e34; }
+        .btn-warning { background-color: #ffc107; color: #212529; }
+        .btn-warning:active { background-color: #d39e00; }
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:active { background-color: #bd2130; }
+        .btn-export { background-color: #17a2b8; margin-top: 5px; }
+        .btn-export:active { background-color: #117a8b; }
+        
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #ddd; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; background: white; min-width: 800px; }
+        th, td { border-bottom: 1px solid #eee; padding: 12px 8px; text-align: center; font-size: 15px; }
+        th { background-color: #f8f9fa; font-weight: bold; border-bottom: 2px solid #ddd; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        
+        .status-waiting { background-color: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+        .status-done { background-color: #d4edda; color: #155724; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+        
+        .badge-nesting { background-color: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; padding: 5px 8px; border-radius: 6px; font-weight: bold; display: inline-block; font-size: 14px; }
+        .badge-saw { background-color: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; padding: 5px 8px; border-radius: 6px; font-weight: bold; display: inline-block; font-size: 14px; }
+        
+        .action-flex { display: flex; gap: 6px; justify-content: center; }
+        .action-flex button { height: 42px; padding: 0 12px; font-size: 15px; width: auto; }
+
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+        .modal-content { background-color: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); box-sizing: border-box; }
+        .modal-content h3 { margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 8px; text-align: center; }
+        .modal-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+        .modal-field label { font-weight: bold; font-size: 14px; color: #555; }
+        .modal-field input, .modal-field select { height: 45px; }
+        .modal-buttons { display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; }
+        .modal-buttons button { flex: 1; height: 45px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📊 機台取料即時看板 (XLSX 匯出優化版)</h2>
+    
+    <!-- 儀表板看板區 -->
+    <div class="dashboard">
+        <div class="dash-card">
+            <div class="dash-title-nesting">🖥️ Nesting 內</div>
+            <div class="dash-value">
+                <span class="text-wait" id="nestInWait">⏳0</span>
+                <span class="text-done" id="nestInDone">✅0張</span>
+            </div>
+        </div>
+        <div class="dash-card">
+            <div class="dash-title-nesting">🖥️ Nesting 外</div>
+            <div class="dash-value">
+                <span class="text-wait" id="nestOutWait">⏳0</span>
+                <span class="text-done" id="nestOutDone">✅0張</span>
+            </div>
+        </div>
+        <div class="dash-card">
+            <div class="dash-title-saw">🪚 電子鋸 330</div>
+            <div class="dash-value">
+                <span class="text-wait" id="saw330Wait">⏳0</span>
+                <span class="text-done" id="saw330Done">✅0張</span>
+            </div>
+        </div>
+        <div class="dash-card">
+            <div class="dash-title-saw">🪚 電子鋸 長風</div>
+            <div class="dash-value">
+                <span class="text-wait" id="sawCfWait">⏳0</span>
+                <span class="text-done" id="sawCfDone">✅0張</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 輸入欄位 (支援 Enter 快捷送出) -->
+    <div class="form-group">
+        <input type="text" id="workOrder" placeholder="工單號碼 / 案名">
+        
+        <select id="machineType">
+            <option value="" disabled selected>請選擇要板機台</option>
+            <option value="Nesting 內">Nesting 內</option>
+            <option value="Nesting 外">Nesting 外</option>
+            <option value="電子鋸 330">電子鋸 330</option>
+            <option value="電子鋸 長風">電子鋸 長風</option>
+        </select>
+
+        <input type="number" id="qty" placeholder="數量 (張)" min="1">
+        <button onclick="requestBoard()">🔔 發起要板</button>
+        <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔 (XLSX)</button>
+    </div>
+
+    <!-- 紀錄表格 -->
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th style="min-width: 150px; background-color: #e2e8f0;">⚡ 瞬間操作</th>
+                    <th>工單/案名</th>
+                    <th>要求機台</th>
+                    <th>數量</th>
+                    <th>狀態</th>
+                    <th>花費(分)</th>
+                    <th>要板時間</th>
+                    <th>給板結束</th>
+                </tr>
+            </thead>
+            <tbody id="logTableBody">
+                <!-- 動態生成 -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 彈窗修改區塊 -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>✏️ 修改要板紀錄</h3>
+        <input type="hidden" id="editId">
+        
+        <div class="modal-field">
+            <label>工單號碼 / 案名</label>
+            <input type="text" id="editWorkOrder">
+        </div>
+        
+        <div class="modal-field">
+            <label>要求機台</label>
+            <select id="editMachineType">
+                <option value="Nesting 內">Nesting 內</option>
+                <option value="Nesting 外">Nesting 外</option>
+                <option value="電子鋸 330">電子鋸 330</option>
+                <option value="電子鋸 長風">電子鋸 長風</option>
+            </select>
+        </div>
+        
+        <div class="modal-field">
+            <label>數量 (張)</label>
+            <input type="number" id="editQty" min="1">
+        </div>
+        
+        <div class="modal-field">
+            <label>要板時間 (開始)</label>
+            <input type="datetime-local" id="editStartTime">
+        </div>
+        
+        <div class="modal-field">
+            <label>給板結束 (完成)</label>
+            <input type="datetime-local" id="editEndTime">
+        </div>
+        
+        <div class="modal-buttons">
+            <button style="background-color: #6c757d;" onclick="closeModal()">取消</button>
+            <button class="btn-success" onclick="saveModalEdit()">💾 儲存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
+
+    window.onload = function() {
+        renderTable();
+        initEventListeners();
+    };
+
+    function initEventListeners() {
+        const inputs = ['workOrder', 'machineType', 'qty'];
+        inputs.forEach(id => {
+            document.getElementById(id).addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    requestBoard();
+                }
+            });
+        });
+    }
+
+    function formatDateToInput(dateStr) {
+        if (!dateStr || dateStr === '-') return '';
+        return dateStr.replace(' ', 'T').substring(0, 16);
+    }
+
+    function formatInputToDisplay(inputVal) {
+        if (!inputVal) return '-';
+        return inputVal.replace('T', ' ') + ':00';
+    }
+
+    function formatDateTime(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mm = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+    }
+
+    function requestBoard() {
+        const workOrderInput = document.getElementById('workOrder');
+        const machineTypeInput = document.getElementById('machineType');
+        const qtyInput = document.getElementById('qty');
+
+        const workOrder = workOrderInput.value.trim();
+        const machineType = machineTypeInput.value;
+        const qty = qtyInput.value.trim();
+
+        if (!workOrder || !machineType || !qty) {
+            alert('請完整填寫工單號碼、選擇機台與數量！');
+            return;
+        }
+
+        const now = new Date();
+        const newLog = {
+            id: Date.now(),
+            date: now.toLocaleDateString(),
+            workOrder: workOrder,
+            machineType: machineType,
+            qty: parseInt(qty, 10),
+            startTimeStr: formatDateTime(now),
+            endTimeStr: '-',
+            duration: '-'
+        };
+
+        boardLogs.unshift(newLog);
+        saveAndRefresh();
+        
+        workOrderInput.value = '';
+        machineTypeInput.value = '';
+        qtyInput.value = '';
+        workOrderInput.focus();
+    }
+
+    function completeBoard(id) {
+        const now = new Date();
+        const log = boardLogs.find(item => item.id === id);
+        
+        if (log) {
+            log.endTimeStr = formatDateTime(now);
+            calculateDuration(log);
+            saveAndRefresh();
+        }
+    }
+
+    function calculateDuration(log) {
+        if (!log.startTimeStr || log.endTimeStr === '-') {
+            log.duration = '-';
+            return;
+        }
+        const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+        const endMs = new Date(log.endTimeStr.replace(/-/g, '/')).getTime();
+        
+        if (isNaN(startMs) || isNaN(endMs) || endMs < startMs) {
+            log.duration = '錯誤';
+        } else {
+            log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
+        }
+    }
+
+    function openEditModal(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            document.getElementById('editId').value = log.id;
+            document.getElementById('editWorkOrder').value = log.workOrder;
+            document.getElementById('editMachineType').value = log.machineType;
+            document.getElementById('editQty').value = log.qty;
+            document.getElementById('editStartTime').value = formatDateToInput(log.startTimeStr);
+            document.getElementById('editEndTime').value = formatDateToInput(log.endTimeStr);
+            document.getElementById('editModal').style.display = 'flex';
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function saveModalEdit() {
+        const id = parseInt(document.getElementById('editId').value, 10);
+        const log = boardLogs.find(item => item.id === id);
+        
+        if (log) {
+            log.workOrder = document.getElementById('editWorkOrder').value.trim();
+            log.machineType = document.getElementById('editMachineType').value;
+            log.qty = parseInt(document.getElementById('editQty').value, 10) || 0;
+            log.startTimeStr = formatInputToDisplay(document.getElementById('editStartTime').value);
+            
+            const endTimeVal = document.getElementById('editEndTime').value;
+            log.endTimeStr = endTimeVal ? formatInputToDisplay(endTimeVal) : '-';
+            
+            if(document.getElementById('editStartTime').value) {
+                log.date = new Date(document.getElementById('editStartTime').value).toLocaleDateString();
+            }
+
+            calculateDuration(log);
+            saveAndRefresh();
+            closeModal();
+        }
+    }
+
+    function deleteLog(id) {
+        if (confirm('確定要刪除這筆要板紀錄嗎？')) {
+            boardLogs = boardLogs.filter(item => item.id !== id);
+            saveAndRefresh();
+        }
+    }
+
+    function saveAndRefresh() {
+        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+        renderTable();
+        updateDashboard();
+    }
+
+    function updateDashboard() {
+        const counts = {
+            'Nesting 內': { wait: 0, done: 0 },
+            'Nesting 外': { wait: 0, done: 0 },
+            '電子鋸 330': { wait: 0, done: 0 },
+            '電子鋸 長風': { wait: 0, done: 0 }
+        };
+
+        boardLogs.forEach(log => {
+            if (counts[log.machineType]) {
+                if (log.endTimeStr === '-') {
+                    counts[log.machineType].wait += 1;
+                } else {
+                    counts[log.machineType].done += (parseInt(log.qty, 10) || 0);
+                }
+            }
+        });
+
+        document.getElementById('nestInWait').innerText = `⏳ 等待: ${counts['Nesting 內'].wait}`;
+        document.getElementById('nestInDone').innerText = `✅ 出板: ${counts['Nesting 內'].done}張`;
+        
+        document.getElementById('nestOutWait').innerText = `⏳ 等待: ${counts['Nesting 外'].wait}`;
+        document.getElementById('nestOutDone').innerText = `✅ 出板: ${counts['Nesting 外'].done}張`;
+        
+        document.getElementById('saw330Wait').innerText = `⏳ 等待: ${counts['電子鋸 330'].wait}`;
+        document.getElementById('saw330Done').innerText = `✅ 出板: ${counts['電子鋸 330'].done}張`;
+        
+        document.getElementById('sawCfWait').innerText = `⏳ 等待: ${counts['電子鋸 長風'].wait}`;
+        document.getElementById('sawCfDone').innerText = `✅ 出板: ${counts['電子鋸 長風'].done}張`;
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('logTableBody');
+        tbody.innerHTML = '';
+
+        if (boardLogs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="color: #888; padding: 20px;">目前尚無要板紀錄</td></tr>`;
+            updateDashboard();
+            return;
+        }
+
+        boardLogs.forEach(log => {
+            const tr = document.createElement('tr');
+            
+            const isWaiting = log.endTimeStr === '-';
+            const statusSpan = isWaiting 
+                ? `<span class="status-waiting">⏳ 等待</span>` 
+                : `<span class="status-done">✅ 完成</span>`;
+            
+            const actionBtn = isWaiting 
+                ? `<button class="btn-success" onclick="completeBoard(${log.id})">🏁 結束</button>` 
+                : `<span style="color:#aaa; font-size:13px;">已結案</span>`;
+
+            let machineBadge = '';
+            if (log.machineType.includes('Nesting')) {
+                machineBadge = `<span class="badge-nesting">${log.machineType}</span>`;
+            } else if (log.machineType.includes('電子鋸')) {
+                machineBadge = `<span class="badge-saw">${log.machineType}</span>`;
+            }
+
+            tr.innerHTML = `
+                <td style="background-color: #f1f5f9;">
+                    <div class="action-flex">
+                        ${actionBtn} 
+                        <button class="btn-warning" onclick="openEditModal(${log.id})">✏️</button>
+                        <button class="btn-danger" onclick="deleteLog(${log.id})">❌</button>
+                    </div>
+                </td>
+                <td><strong>${log.workOrder}</strong></td>
+                <td>${machineBadge}</td>
+                <td>${log.qty}張</td>
+                <td>${statusSpan}</td>
+                <td><strong>${log.duration}</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        updateDashboard();
+    }
+
+    // 💡 透過 SheetJS 匯出標準 .xlsx 檔案
+    function exportToExcel() {
+        if (boardLogs.length === 0) {
+            alert('沒有紀錄可匯出！');
+            return;
+        }
+
+        // 轉換資料格式供 SheetJS 使用
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "工單/案名": log.workOrder,
+            "要求機台": log.machineType,
+            "數量 (張)": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待給板"
+        }));
+
+        // 建立活頁簿與工作表
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "要板紀錄");
+
+        // 自動調整欄寬（避免文字被遮蔽）
+        const colWidths = [
+            {wch: 12}, // 日期
+            {wch: 18}, // 工單/案名
+            {wch: 14}, // 要求機台
+            {wch: 10}, // 數量
+            {wch: 20}, // 開始時間
+            {wch: 20}, // 結束時間
+            {wch: 14}, // 花費時間
+            {wch: 12}  // 狀態
+        ];
+        worksheet['!cols'] = colWidths;
+
+        // 產出 Excel 檔案並下載
+        const fileName = `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+    }
+</script>
+
+</body>
+</html>
