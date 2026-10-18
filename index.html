@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>機台領料追蹤與即時看板系統</title>
+    <!-- 引入 SheetJS (XLSX) 函式庫以支援真正微軟 Excel (.xlsx) 匯出 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 10px; background-color: #f4f6f9; color: #333; font-size: 16px; }
         .container { max-width: 1100px; margin: 0 auto; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
@@ -61,7 +63,7 @@
 <body>
 
 <div class="container">
-    <h2>📊 機台領料追蹤與即時看板 (離線 XLSX 專業版)</h2>
+    <h2>📊 機台取料即時看板 (XLSX 匯出優化版)</h2>
     
     <!-- 儀表板看板區 -->
     <div class="dashboard">
@@ -109,7 +111,7 @@
 
         <input type="number" id="qty" placeholder="數量 (張)" min="1">
         <button onclick="requestBoard()">🔔 發起要板</button>
-        <button class="btn-export" onclick="exportToExcelXLSX()">📤 匯出 Excel 檔 (XLSX)</button>
+        <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔 (XLSX)</button>
     </div>
 
     <!-- 紀錄表格 -->
@@ -179,46 +181,21 @@
 
 <script>
     let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
-    let liveTimerInterval = null;
 
     window.onload = function() {
         renderTable();
         initEventListeners();
-        startLiveTimer();
     };
 
     function initEventListeners() {
         const inputs = ['workOrder', 'machineType', 'qty'];
         inputs.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        requestBoard();
-                    }
-                });
-            }
-        });
-    }
-
-    // 每秒局部更新花費時間（不重繪整張表，按鈕絕對不會失效）
-    function startLiveTimer() {
-        if (liveTimerInterval) clearInterval(liveTimerInterval);
-        liveTimerInterval = setInterval(() => {
-            boardLogs.forEach(log => {
-                if (log.endTimeStr === '-') {
-                    const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
-                    const currentMs = new Date().getTime();
-                    if (!isNaN(startMs)) {
-                        const currentDuration = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-                        const durationEl = document.getElementById(`duration-${log.id}`);
-                        if (durationEl) {
-                            durationEl.innerText = `${currentDuration}分`;
-                        }
-                    }
+            document.getElementById(id).addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    requestBoard();
                 }
             });
-        }, 1000);
+        });
     }
 
     function formatDateToInput(dateStr) {
@@ -276,13 +253,11 @@
         workOrderInput.focus();
     }
 
-    // 結案按鈕（帶有防呆確認機制）
     function completeBoard(id) {
+        const now = new Date();
         const log = boardLogs.find(item => item.id === id);
-        if (!log) return;
-
-        if (confirm(`確定要將工單【${log.workOrder}】標為給板結束嗎？`)) {
-            const now = new Date();
+        
+        if (log) {
             log.endTimeStr = formatDateTime(now);
             calculateDuration(log);
             saveAndRefresh();
@@ -291,13 +266,7 @@
 
     function calculateDuration(log) {
         if (!log.startTimeStr || log.endTimeStr === '-') {
-            const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
-            const currentMs = new Date().getTime();
-            if (!isNaN(startMs)) {
-                log.duration = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-            } else {
-                log.duration = '-';
-            }
+            log.duration = '-';
             return;
         }
         const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
@@ -408,10 +377,6 @@
             const tr = document.createElement('tr');
             
             const isWaiting = log.endTimeStr === '-';
-            if (isWaiting) {
-                calculateDuration(log);
-            }
-
             const statusSpan = isWaiting 
                 ? `<span class="status-waiting">⏳ 等待</span>` 
                 : `<span class="status-done">✅ 完成</span>`;
@@ -439,7 +404,7 @@
                 <td>${machineBadge}</td>
                 <td>${log.qty}張</td>
                 <td>${statusSpan}</td>
-                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" id="duration-${log.id}">${log.duration}分</strong></td>
+                <td><strong>${log.duration}</strong></td>
                 <td>${log.startTimeStr}</td>
                 <td>${log.endTimeStr}</td>
             `;
@@ -449,73 +414,46 @@
         updateDashboard();
     }
 
-    // 💡 內建高效 Excel (XML 格式) 匯出：副檔名為 .xlsx，可在無網路環境完美開啟且格式乾淨
-    function exportToExcelXLSX() {
+    // 💡 透過 SheetJS 匯出標準 .xlsx 檔案
+    function exportToExcel() {
         if (boardLogs.length === 0) {
             alert('沒有紀錄可匯出！');
             return;
         }
 
-        let xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Worksheet ss:Name="要板紀錄">
-  <Table>
-   <Row>
-    <Cell><Data ss:Type="String">日期</Data></Cell>
-    <Cell><Data ss:Type="String">工單/案名</Data></Cell>
-    <Cell><Data ss:Type="String">要求機台</Data></Cell>
-    <Cell><Data ss:Type="String">數量 (張)</Data></Cell>
-    <Cell><Data ss:Type="String">要板時間(開始)</Data></Cell>
-    <Cell><Data ss:Type="String">給板結束(完成)</Data></Cell>
-    <Cell><Data ss:Type="String">花費時間(分鐘)</Data></Cell>
-    <Cell><Data ss:Type="String">狀態</Data></Cell>
-   </Row>`;
+        // 轉換資料格式供 SheetJS 使用
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "工單/案名": log.workOrder,
+            "要求機台": log.machineType,
+            "數量 (張)": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待給板"
+        }));
 
-        boardLogs.forEach(log => {
-            const status = log.endTimeStr !== "-" ? "已完成" : "等待給板";
-            xmlContent += `
-   <Row>
-    <Cell><Data ss:Type="String">${escapeXml(log.date)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.workOrder)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.machineType)}</Data></Cell>
-    <Cell><Data ss:Type="Number">${parseInt(log.qty, 10) || 0}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.startTimeStr)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.endTimeStr)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.duration)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(status)}</Data></Cell>
-   </Row>`;
-        });
+        // 建立活頁簿與工作表
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "要板紀錄");
 
-        xmlContent += `
-  </Table>
- </Worksheet>
-</Workbook>`;
+        // 自動調整欄寬（避免文字被遮蔽）
+        const colWidths = [
+            {wch: 12}, // 日期
+            {wch: 18}, // 工單/案名
+            {wch: 14}, // 要求機台
+            {wch: 10}, // 數量
+            {wch: 20}, // 開始時間
+            {wch: 20}, // 結束時間
+            {wch: 14}, // 花費時間
+            {wch: 12}  // 狀態
+        ];
+        worksheet['!cols'] = colWidths;
 
-        const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute("href", url);
-        link.setAttribute("download", `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
-    function escapeXml(str) {
-        if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
+        // 產出 Excel 檔案並下載
+        const fileName = `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
     }
 </script>
 
