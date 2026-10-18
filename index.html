@@ -304,4 +304,173 @@
     function openEditModal(id) {
         const log = boardLogs.find(item => item.id === id);
         if (log) {
-            document.getElementById('
+            document.getElementById('editId').value = log.id;
+            document.getElementById('editWorkOrder').value = log.workOrder;
+            document.getElementById('editMachineType').value = log.machineType;
+            document.getElementById('editQty').value = log.qty;
+            document.getElementById('editStartTime').value = formatDateToInput(log.startTimeStr);
+            document.getElementById('editEndTime').value = formatDateToInput(log.endTimeStr);
+            document.getElementById('editModal').style.display = 'flex';
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function saveModalEdit() {
+        const id = parseInt(document.getElementById('editId').value, 10);
+        const log = boardLogs.find(item => item.id === id);
+        
+        if (log) {
+            log.workOrder = document.getElementById('editWorkOrder').value.trim();
+            log.machineType = document.getElementById('editMachineType').value;
+            log.qty = parseInt(document.getElementById('editQty').value, 10) || 0;
+            log.startTimeStr = formatInputToDisplay(document.getElementById('editStartTime').value);
+            
+            const endTimeVal = document.getElementById('editEndTime').value;
+            log.endTimeStr = endTimeVal ? formatInputToDisplay(endTimeVal) : '-';
+            
+            if(document.getElementById('editStartTime').value) {
+                log.date = new Date(document.getElementById('editStartTime').value).toLocaleDateString();
+            }
+
+            calculateDuration(log);
+            saveAndRefresh();
+            closeModal();
+        }
+    }
+
+    function deleteLog(id) {
+        if (confirm('確定要刪除這筆要板紀錄嗎？')) {
+            boardLogs = boardLogs.filter(item => item.id !== id);
+            saveAndRefresh();
+        }
+    }
+
+    function saveAndRefresh() {
+        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+        renderTable(true);
+        updateDashboard();
+    }
+
+    function updateDashboard() {
+        const counts = {
+            'Nesting 內': { wait: 0, done: 0 },
+            'Nesting 外': { wait: 0, done: 0 },
+            '電子鋸 330': { wait: 0, done: 0 },
+            '電子鋸 長風': { wait: 0, done: 0 }
+        };
+
+        boardLogs.forEach(log => {
+            if (counts[log.machineType]) {
+                if (log.endTimeStr === '-') {
+                    counts[log.machineType].wait += 1;
+                } else {
+                    counts[log.machineType].done += (parseInt(log.qty, 10) || 0);
+                }
+            }
+        });
+
+        document.getElementById('nestInWait').innerText = `⏳ 等待: ${counts['Nesting 內'].wait}`;
+        document.getElementById('nestInDone').innerText = `✅ 出板: ${counts['Nesting 內'].done}張`;
+        
+        document.getElementById('nestOutWait').innerText = `⏳ 等待: ${counts['Nesting 外'].wait}`;
+        document.getElementById('nestOutDone').innerText = `✅ 出板: ${counts['Nesting 外'].done}張`;
+        
+        document.getElementById('saw330Wait').innerText = `⏳ 等待: ${counts['電子鋸 330'].wait}`;
+        document.getElementById('saw330Done').innerText = `✅ 出板: ${counts['電子鋸 330'].done}張`;
+        
+        document.getElementById('sawCfWait').innerText = `⏳ 等待: ${counts['電子鋸 長風'].wait}`;
+        document.getElementById('sawCfDone').innerText = `✅ 出板: ${counts['電子鋸 長風'].done}張`;
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('logTableBody');
+        tbody.innerHTML = '';
+
+        if (boardLogs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="color: #888; padding: 20px;">目前尚無要板紀錄</td></tr>`;
+            updateDashboard();
+            return;
+        }
+
+        boardLogs.forEach(log => {
+            const tr = document.createElement('tr');
+            
+            const isWaiting = log.endTimeStr === '-';
+            if (isWaiting) {
+                calculateDuration(log); // 即時更新等待中的花費時間
+            }
+
+            const statusSpan = isWaiting 
+                ? `<span class="status-waiting">⏳ 等待</span>` 
+                : `<span class="status-done">✅ 完成</span>`;
+            
+            const actionBtn = isWaiting 
+                ? `<button class="btn-success" onclick="completeBoard(${log.id})">🏁 結束</button>` 
+                : `<span style="color:#aaa; font-size:13px;">已結案</span>`;
+
+            let machineBadge = '';
+            if (log.machineType.includes('Nesting')) {
+                machineBadge = `<span class="badge-nesting">${log.machineType}</span>`;
+            } else if (log.machineType.includes('電子鋸')) {
+                machineBadge = `<span class="badge-saw">${log.machineType}</span>`;
+            }
+
+            tr.innerHTML = `
+                <td style="background-color: #f1f5f9;">
+                    <div class="action-flex">
+                        ${actionBtn} 
+                        <button class="btn-warning" onclick="openEditModal(${log.id})">✏️</button>
+                        <button class="btn-danger" onclick="deleteLog(${log.id})">❌</button>
+                    </div>
+                </td>
+                <td><strong>${log.workOrder}</strong></td>
+                <td>${machineBadge}</td>
+                <td>${log.qty}張</td>
+                <td>${statusSpan}</td>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};">${log.duration}分</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        updateDashboard();
+    }
+
+    function exportToExcel() {
+        if (boardLogs.length === 0) {
+            alert('沒有紀錄可匯出！');
+            return;
+        }
+
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "工單/案名": log.workOrder,
+            "要求機台": log.machineType,
+            "數量 (張)": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待給板"
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "要板紀錄");
+
+        const colWidths = [
+            {wch: 12}, {wch: 18}, {wch: 14}, {wch: 10}, 
+            {wch: 20}, {wch: 20}, {wch: 14}, {wch: 12}
+        ];
+        worksheet['!cols'] = colWidths;
+
+        const fileName = `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+    }
+</script>
+
+</body>
+</html>
