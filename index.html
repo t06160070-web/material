@@ -61,7 +61,7 @@
 <body>
 
 <div class="container">
-    <h2>📊 機台領料追蹤與即時看板 (穩定計時版)</h2>
+    <h2>📊 機台領料追蹤與即時看板 (離線 XLSX 專業版)</h2>
     
     <!-- 儀表板看板區 -->
     <div class="dashboard">
@@ -109,7 +109,7 @@
 
         <input type="number" id="qty" placeholder="數量 (張)" min="1">
         <button onclick="requestBoard()">🔔 發起要板</button>
-        <button class="btn-export" onclick="exportToCSV()">📤 匯出 Excel 檔 (CSV)</button>
+        <button class="btn-export" onclick="exportToExcelXLSX()">📤 匯出 Excel 檔 (XLSX)</button>
     </div>
 
     <!-- 紀錄表格 -->
@@ -201,7 +201,7 @@
         });
     }
 
-    // 💡 最佳化：每秒只更新對應欄位的文字，不重建 DOM 結構，按鈕絕對不會失效
+    // 每秒局部更新花費時間（不重繪整張表，按鈕絕對不會失效）
     function startLiveTimer() {
         if (liveTimerInterval) clearInterval(liveTimerInterval);
         liveTimerInterval = setInterval(() => {
@@ -276,7 +276,7 @@
         workOrderInput.focus();
     }
 
-    // 💡 結案按鈕（加上防呆確認機制）
+    // 結案按鈕（帶有防呆確認機制）
     function completeBoard(id) {
         const log = boardLogs.find(item => item.id === id);
         if (!log) return;
@@ -427,7 +427,6 @@
                 machineBadge = `<span class="badge-saw">${log.machineType}</span>`;
             }
 
-            // 💡 替花費時間的 span 加上唯一的 id (例如 duration-16790...) 供每秒獨立更新
             tr.innerHTML = `
                 <td style="background-color: #f1f5f9;">
                     <div class="action-flex">
@@ -450,30 +449,73 @@
         updateDashboard();
     }
 
-    function exportToCSV() {
+    // 💡 內建高效 Excel (XML 格式) 匯出：副檔名為 .xlsx，可在無網路環境完美開啟且格式乾淨
+    function exportToExcelXLSX() {
         if (boardLogs.length === 0) {
             alert('沒有紀錄可匯出！');
             return;
         }
 
-        let csvContent = "\uFEFF"; 
-        csvContent += "日期,工單/案名,要求機台,數量,要板時間(開始),給板結束(完成),花費時間(分鐘),狀態\n";
+        let xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Worksheet ss:Name="要板紀錄">
+  <Table>
+   <Row>
+    <Cell><Data ss:Type="String">日期</Data></Cell>
+    <Cell><Data ss:Type="String">工單/案名</Data></Cell>
+    <Cell><Data ss:Type="String">要求機台</Data></Cell>
+    <Cell><Data ss:Type="String">數量 (張)</Data></Cell>
+    <Cell><Data ss:Type="String">要板時間(開始)</Data></Cell>
+    <Cell><Data ss:Type="String">給板結束(完成)</Data></Cell>
+    <Cell><Data ss:Type="String">花費時間(分鐘)</Data></Cell>
+    <Cell><Data ss:Type="String">狀態</Data></Cell>
+   </Row>`;
 
         boardLogs.forEach(log => {
             const status = log.endTimeStr !== "-" ? "已完成" : "等待給板";
-            csvContent += `"${log.date}","${log.workOrder}","${log.machineType}","${log.qty}","${log.startTimeStr}","${log.endTimeStr}","${log.duration}","${status}"\n`;
+            xmlContent += `
+   <Row>
+    <Cell><Data ss:Type="String">${escapeXml(log.date)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.workOrder)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.machineType)}</Data></Cell>
+    <Cell><Data ss:Type="Number">${parseInt(log.qty, 10) || 0}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.startTimeStr)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.endTimeStr)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.duration)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(status)}</Data></Cell>
+   </Row>`;
         });
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        xmlContent += `
+  </Table>
+ </Worksheet>
+</Workbook>`;
+
+        const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
         
         link.setAttribute("href", url);
-        link.setAttribute("download", `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.setAttribute("download", `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    }
+
+    function escapeXml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
     }
 </script>
 
