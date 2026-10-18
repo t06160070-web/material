@@ -63,7 +63,7 @@
 <body>
 
 <div class="container">
-    <h2>📊 機台領料追蹤與即時看板 (即時碼錶計時版)</h2>
+    <h2>📊 機台取料即時看板 (XLSX 匯出優化版)</h2>
     
     <!-- 儀表板看板區 -->
     <div class="dashboard">
@@ -181,12 +181,10 @@
 
 <script>
     let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
-    let liveTimerInterval = null; // 用於即時更新碼錶的計時器
 
     window.onload = function() {
         renderTable();
         initEventListeners();
-        startLiveTimer(); // 啟動即時碼錶更新
     };
 
     function initEventListeners() {
@@ -198,17 +196,6 @@
                 }
             });
         });
-    }
-
-    // 啟動每秒即時更新花費時間
-    function startLiveTimer() {
-        if (liveTimerInterval) clearInterval(liveTimerInterval);
-        liveTimerInterval = setInterval(() => {
-            const hasWaiting = boardLogs.some(log => log.endTimeStr === '-');
-            if (hasWaiting) {
-                renderTable(false); // 僅更新畫面上的即時時間與儀表板，不重新重置 DOM
-            }
-        }, 1000);
     }
 
     function formatDateToInput(dateStr) {
@@ -266,13 +253,11 @@
         workOrderInput.focus();
     }
 
-    // 💡 結案按鈕（加上防呆確認機制）
     function completeBoard(id) {
+        const now = new Date();
         const log = boardLogs.find(item => item.id === id);
-        if (!log) return;
-
-        if (confirm(`確定要將工單【${log.workOrder}】標為給板結束嗎？`)) {
-            const now = new Date();
+        
+        if (log) {
             log.endTimeStr = formatDateTime(now);
             calculateDuration(log);
             saveAndRefresh();
@@ -281,14 +266,7 @@
 
     function calculateDuration(log) {
         if (!log.startTimeStr || log.endTimeStr === '-') {
-            // 如果還在等待中，動態計算當前已經過的分鐘數
-            const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
-            const currentMs = new Date().getTime();
-            if (!isNaN(startMs)) {
-                log.duration = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-            } else {
-                log.duration = '-';
-            }
+            log.duration = '-';
             return;
         }
         const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
@@ -350,7 +328,7 @@
 
     function saveAndRefresh() {
         localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
-        renderTable(true);
+        renderTable();
         updateDashboard();
     }
 
@@ -399,10 +377,6 @@
             const tr = document.createElement('tr');
             
             const isWaiting = log.endTimeStr === '-';
-            if (isWaiting) {
-                calculateDuration(log); // 即時更新等待中的花費時間
-            }
-
             const statusSpan = isWaiting 
                 ? `<span class="status-waiting">⏳ 等待</span>` 
                 : `<span class="status-done">✅ 完成</span>`;
@@ -430,7 +404,7 @@
                 <td>${machineBadge}</td>
                 <td>${log.qty}張</td>
                 <td>${statusSpan}</td>
-                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};">${log.duration}分</strong></td>
+                <td><strong>${log.duration}</strong></td>
                 <td>${log.startTimeStr}</td>
                 <td>${log.endTimeStr}</td>
             `;
@@ -440,12 +414,14 @@
         updateDashboard();
     }
 
+    // 💡 透過 SheetJS 匯出標準 .xlsx 檔案
     function exportToExcel() {
         if (boardLogs.length === 0) {
             alert('沒有紀錄可匯出！');
             return;
         }
 
+        // 轉換資料格式供 SheetJS 使用
         const excelData = boardLogs.map(log => ({
             "日期": log.date,
             "工單/案名": log.workOrder,
@@ -457,16 +433,25 @@
             "狀態": log.endTimeStr !== "-" ? "已完成" : "等待給板"
         }));
 
+        // 建立活頁簿與工作表
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "要板紀錄");
 
+        // 自動調整欄寬（避免文字被遮蔽）
         const colWidths = [
-            {wch: 12}, {wch: 18}, {wch: 14}, {wch: 10}, 
-            {wch: 20}, {wch: 20}, {wch: 14}, {wch: 12}
+            {wch: 12}, // 日期
+            {wch: 18}, // 工單/案名
+            {wch: 14}, // 要求機台
+            {wch: 10}, // 數量
+            {wch: 20}, // 開始時間
+            {wch: 20}, // 結束時間
+            {wch: 14}, // 花費時間
+            {wch: 12}  // 狀態
         ];
         worksheet['!cols'] = colWidths;
 
+        // 產出 Excel 檔案並下載
         const fileName = `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`;
         XLSX.writeFile(workbook, fileName);
     }
