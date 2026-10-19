@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>機台領料追蹤與即時看板系統</title>
+    <!-- 引入 SheetJS (XLSX) 函式庫以支援真正微軟 Excel (.xlsx) 匯出 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 10px; background-color: #f4f6f9; color: #333; font-size: 16px; }
         .container { max-width: 1100px; margin: 0 auto; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
@@ -100,7 +102,7 @@
 
         <input type="number" id="qty" placeholder="數量 (張)" min="1">
         <button onclick="requestBoard()">🔔 發起要板</button>
-        <button class="btn-export" onclick="exportToExcelXLSX()">📤 匯出 Excel 檔 (XLSX)</button>
+        <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔 (XLSX)</button>
     </div>
 
     <!-- 紀錄表格 -->
@@ -362,7 +364,7 @@
         updateDashboard();
     }
 
-    // 💡 頂部儀表板更新：結合狀態、等待數、已出板張數、以及「頂部快捷結束按鈕」
+    // 頂部儀表板更新：結合狀態、等待數、已出板張數、以及「頂部快捷結束按鈕」
     function updateDashboard() {
         const machineTypes = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
         
@@ -374,12 +376,10 @@
             const totalDoneQty = doneLogs.reduce((sum, log) => sum + (parseInt(log.qty, 10) || 0), 0);
 
             if (waitingLogs.length === 0) {
-                // 目前無等待
                 statusArea.innerHTML = `
                     <span class="text-done">✅ 閒置 / 已出 ${totalDoneQty}張</span>
                 `;
             } else if (waitingLogs.length === 1) {
-                // 單筆等待：直接在頂部顯示即時時間與專屬快捷結束鈕！
                 const log = waitingLogs[0];
                 calculateDuration(log);
                 statusArea.innerHTML = `
@@ -392,7 +392,6 @@
                     </div>
                 `;
             } else {
-                // 多筆等待（例如同時有2張單在等）
                 statusArea.innerHTML = `
                     <span class="text-wait">⏳ 等待中: ${waitingLogs.length}筆</span>
                     <span class="text-done">✅ ${totalDoneQty}張</span>
@@ -456,73 +455,36 @@
         updateDashboard();
     }
 
-    // 匯出 Excel 檔 (XML 格式 / 支援 .xlsx 副檔名 / 離線順暢)
-    function exportToExcelXLSX() {
+    // 透過 SheetJS 匯出標準 .xlsx 檔案
+    function exportToExcel() {
         if (boardLogs.length === 0) {
             alert('沒有紀錄可匯出！');
             return;
         }
 
-        let xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Worksheet ss:Name="要板紀錄">
-  <Table>
-   <Row>
-    <Cell><Data ss:Type="String">日期</Data></Cell>
-    <Cell><Data ss:Type="String">工單/案名</Data></Cell>
-    <Cell><Data ss:Type="String">要求機台</Data></Cell>
-    <Cell><Data ss:Type="String">數量 (張)</Data></Cell>
-    <Cell><Data ss:Type="String">要板時間(開始)</Data></Cell>
-    <Cell><Data ss:Type="String">給板結束(完成)</Data></Cell>
-    <Cell><Data ss:Type="String">花費時間(分鐘)</Data></Cell>
-    <Cell><Data ss:Type="String">狀態</Data></Cell>
-   </Row>`;
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "工單/案名": log.workOrder,
+            "要求機台": log.machineType,
+            "數量 (張)": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待給板"
+        }));
 
-        boardLogs.forEach(log => {
-            const status = log.endTimeStr !== "-" ? "已完成" : "等待給板";
-            xmlContent += `
-   <Row>
-    <Cell><Data ss:Type="String">${escapeXml(log.date)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.workOrder)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.machineType)}</Data></Cell>
-    <Cell><Data ss:Type="Number">${parseInt(log.qty, 10) || 0}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.startTimeStr)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.endTimeStr)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(log.duration)}</Data></Cell>
-    <Cell><Data ss:Type="String">${escapeXml(status)}</Data></Cell>
-   </Row>`;
-        });
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "要板紀錄");
 
-        xmlContent += `
-  </Table>
- </Worksheet>
-</Workbook>`;
+        const colWidths = [
+            {wch: 12}, {wch: 18}, {wch: 14}, {wch: 10}, 
+            {wch: 20}, {wch: 20}, {wch: 14}, {wch: 12}
+        ];
+        worksheet['!cols'] = colWidths;
 
-        const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute("href", url);
-        link.setAttribute("download", `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
-    function escapeXml(str) {
-        if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
+        const fileName = `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
     }
 </script>
 
