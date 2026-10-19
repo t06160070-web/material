@@ -11,16 +11,13 @@
         .container { max-width: 1100px; margin: 0 auto; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
         h2 { font-size: 20px; border-bottom: 3px solid #007bff; padding-bottom: 8px; margin-top: 5px; margin-bottom: 15px; text-align: center; }
         
-        /* 頂部即時儀表板區（結合快捷結束按鈕與即時碼錶） */
         .dashboard { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
-        .dash-card { background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; justify-content: space-between; min-height: 90px; }
-        .dash-title-nesting { color: #0d47a1; font-weight: bold; font-size: 14px; margin-bottom: 3px; }
-        .dash-title-saw { color: #1b5e20; font-weight: bold; font-size: 14px; margin-bottom: 3px; }
-        .dash-status-area { font-size: 15px; font-weight: bold; margin: 5px 0; display: flex; justify-content: space-around; align-items: center; }
+        .dash-card { background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .dash-title-nesting { color: #0d47a1; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        .dash-title-saw { color: #1b5e20; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        .dash-value { font-size: 16px; font-weight: bold; display: flex; justify-content: space-around; }
         .text-wait { color: #dc3545; }
         .text-done { color: #28a745; }
-        .dash-action-btn { background-color: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 5px; height: 36px; }
-        .dash-action-btn:active { background-color: #1e7e34; }
 
         .form-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
         input, select, button { padding: 12px; font-size: 16px; border: 1px solid #bbb; border-radius: 8px; height: 50px; box-sizing: border-box; width: 100%; -webkit-appearance: none; }
@@ -66,29 +63,41 @@
 <body>
 
 <div class="container">
-    <h2>📊 機台領料追蹤與即時看板 (頂部快捷操作版)</h2>
+    <h2>📊 機台領料追蹤與即時看板系統</h2>
     
-    <!-- 頂部即時儀表板 / 快捷操作區 -->
+    <!-- 頂部傳統數字看板 -->
     <div class="dashboard">
-        <div class="dash-card" id="card-Nesting 內">
+        <div class="dash-card">
             <div class="dash-title-nesting">🖥️ Nesting 內</div>
-            <div class="dash-status-area" id="status-Nesting 內">載入中...</div>
+            <div class="dash-value">
+                <span class="text-wait" id="nestInWait">⏳0</span>
+                <span class="text-done" id="nestInDone">✅0張</span>
+            </div>
         </div>
-        <div class="dash-card" id="card-Nesting 外">
+        <div class="dash-card">
             <div class="dash-title-nesting">🖥️ Nesting 外</div>
-            <div class="dash-status-area" id="status-Nesting 外">載入中...</div>
+            <div class="dash-value">
+                <span class="text-wait" id="nestOutWait">⏳0</span>
+                <span class="text-done" id="nestOutDone">✅0張</span>
+            </div>
         </div>
-        <div class="dash-card" id="card-電子鋸 330">
+        <div class="dash-card">
             <div class="dash-title-saw">🪚 電子鋸 330</div>
-            <div class="dash-status-area" id="status-電子鋸 330">載入中...</div>
+            <div class="dash-value">
+                <span class="text-wait" id="saw330Wait">⏳0</span>
+                <span class="text-done" id="saw330Done">✅0張</span>
+            </div>
         </div>
-        <div class="dash-card" id="card-電子鋸 長風">
+        <div class="dash-card">
             <div class="dash-title-saw">🪚 電子鋸 長風</div>
-            <div class="dash-status-area" id="status-電子鋸 長風">載入中...</div>
+            <div class="dash-value">
+                <span class="text-wait" id="sawCfWait">⏳0</span>
+                <span class="text-done" id="sawCfDone">✅0張</span>
+            </div>
         </div>
     </div>
     
-    <!-- 輸入欄位 (支援 Enter 快捷送出) -->
+    <!-- 輸入欄位 -->
     <div class="form-group">
         <input type="text" id="workOrder" placeholder="工單號碼 / 案名">
         
@@ -194,7 +203,7 @@
         });
     }
 
-    // 每秒即時更新花費時間與頂部方塊秒數
+    // 每秒即時更新表格中的碼錶（不重繪整張表，確保按鈕絕對好點）
     function startLiveTimer() {
         if (liveTimerInterval) clearInterval(liveTimerInterval);
         liveTimerInterval = setInterval(() => {
@@ -204,17 +213,9 @@
                     const currentMs = new Date().getTime();
                     if (!isNaN(startMs)) {
                         const currentDuration = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-                        
-                        // 更新下方表格的秒數
                         const durationEl = document.getElementById(`duration-${log.id}`);
                         if (durationEl) {
                             durationEl.innerText = `${currentDuration}分`;
-                        }
-                        
-                        // 更新頂部方塊的秒數
-                        const topDurationEl = document.getElementById(`top-duration-${log.id}`);
-                        if (topDurationEl) {
-                            topDurationEl.innerText = `${currentDuration}分`;
                         }
                     }
                 }
@@ -277,7 +278,7 @@
         workOrderInput.focus();
     }
 
-    // 結案按鈕（帶有防呆確認機制）
+    // 結案按鈕（附帶防呆確認）
     function completeBoard(id) {
         const log = boardLogs.find(item => item.id === id);
         if (!log) return;
@@ -364,40 +365,35 @@
         updateDashboard();
     }
 
-    // 頂部儀表板更新：結合狀態、等待數、已出板張數、以及「頂部快捷結束按鈕」
     function updateDashboard() {
-        const machineTypes = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
-        
-        machineTypes.forEach(machine => {
-            const statusArea = document.getElementById(`status-${machine}`);
-            const waitingLogs = boardLogs.filter(log => log.machineType === machine && log.endTimeStr === '-');
-            const doneLogs = boardLogs.filter(log => log.machineType === machine && log.endTimeStr !== '-');
-            
-            const totalDoneQty = doneLogs.reduce((sum, log) => sum + (parseInt(log.qty, 10) || 0), 0);
+        const counts = {
+            'Nesting 內': { wait: 0, done: 0 },
+            'Nesting 外': { wait: 0, done: 0 },
+            '電子鋸 330': { wait: 0, done: 0 },
+            '電子鋸 長風': { wait: 0, done: 0 }
+        };
 
-            if (waitingLogs.length === 0) {
-                statusArea.innerHTML = `
-                    <span class="text-done">✅ 閒置 / 已出 ${totalDoneQty}張</span>
-                `;
-            } else if (waitingLogs.length === 1) {
-                const log = waitingLogs[0];
-                calculateDuration(log);
-                statusArea.innerHTML = `
-                    <div style="width: 100%;">
-                        <div style="display: flex; justify-content: space-between; font-size: 14px; align-items: center;">
-                            <span class="text-wait">⏳ 等待中 (<span id="top-duration-${log.id}">${log.duration}分</span>)</span>
-                            <span style="color: #666; font-size: 13px;">${log.qty}張</span>
-                        </div>
-                        <button class="dash-action-btn" onclick="completeBoard(${log.id})">🏁 快捷結束</button>
-                    </div>
-                `;
-            } else {
-                statusArea.innerHTML = `
-                    <span class="text-wait">⏳ 等待中: ${waitingLogs.length}筆</span>
-                    <span class="text-done">✅ ${totalDoneQty}張</span>
-                `;
+        boardLogs.forEach(log => {
+            if (counts[log.machineType]) {
+                if (log.endTimeStr === '-') {
+                    counts[log.machineType].wait += 1;
+                } else {
+                    counts[log.machineType].done += (parseInt(log.qty, 10) || 0);
+                }
             }
         });
+
+        document.getElementById('nestInWait').innerText = `⏳ 等待: ${counts['Nesting 內'].wait}`;
+        document.getElementById('nestInDone').innerText = `✅ 出板: ${counts['Nesting 內'].done}張`;
+        
+        document.getElementById('nestOutWait').innerText = `⏳ 等待: ${counts['Nesting 外'].wait}`;
+        document.getElementById('nestOutDone').innerText = `✅ 出板: ${counts['Nesting 外'].done}張`;
+        
+        document.getElementById('saw330Wait').innerText = `⏳ 等待: ${counts['電子鋸 330'].wait}`;
+        document.getElementById('saw330Done').innerText = `✅ 出板: ${counts['電子鋸 330'].done}張`;
+        
+        document.getElementById('sawCfWait').innerText = `⏳ 等待: ${counts['電子鋸 長風'].wait}`;
+        document.getElementById('sawCfDone').innerText = `✅ 出板: ${counts['電子鋸 長風'].done}張`;
     }
 
     function renderTable() {
@@ -455,7 +451,6 @@
         updateDashboard();
     }
 
-    // 透過 SheetJS 匯出標準 .xlsx 檔案
     function exportToExcel() {
         if (boardLogs.length === 0) {
             alert('沒有紀錄可匯出！');
