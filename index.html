@@ -280,4 +280,251 @@
         const log = boardLogs.find(item => item.id === id);
         if (!log) return;
 
-        if (confirm
+        if (confirm(`確定要將工單【${log.workOrder}】標為給板結束嗎？`)) {
+            const now = new Date();
+            log.endTimeStr = formatDateTime(now);
+            calculateDuration(log);
+            saveAndRefresh();
+        }
+    }
+
+    function calculateDuration(log) {
+        if (!log.startTimeStr || log.endTimeStr === '-') {
+            const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+            const currentMs = new Date().getTime();
+            if (!isNaN(startMs)) {
+                log.duration = ((currentMs - startMs) / 1000 / 60).toFixed(1);
+            } else {
+                log.duration = '-';
+            }
+            return;
+        }
+        const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+        const endMs = new Date(log.endTimeStr.replace(/-/g, '/')).getTime();
+        
+        if (isNaN(startMs) || isNaN(endMs) || endMs < startMs) {
+            log.duration = '錯誤';
+        } else {
+            log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
+        }
+    }
+
+    function openEditModal(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            document.getElementById('editId').value = log.id;
+            document.getElementById('editWorkOrder').value = log.workOrder;
+            document.getElementById('editMachineType').value = log.machineType;
+            document.getElementById('editQty').value = log.qty;
+            document.getElementById('editStartTime').value = formatDateToInput(log.startTimeStr);
+            document.getElementById('editEndTime').value = formatDateToInput(log.endTimeStr);
+            document.getElementById('editModal').style.display = 'flex';
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function saveModalEdit() {
+        const id = parseInt(document.getElementById('editId').value, 10);
+        const log = boardLogs.find(item => item.id === id);
+        
+        if (log) {
+            log.workOrder = document.getElementById('editWorkOrder').value.trim();
+            log.machineType = document.getElementById('editMachineType').value;
+            log.qty = parseInt(document.getElementById('editQty').value, 10) || 0;
+            log.startTimeStr = formatInputToDisplay(document.getElementById('editStartTime').value);
+            
+            const endTimeVal = document.getElementById('editEndTime').value;
+            log.endTimeStr = endTimeVal ? formatInputToDisplay(endTimeVal) : '-';
+            
+            if(document.getElementById('editStartTime').value) {
+                log.date = new Date(document.getElementById('editStartTime').value).toLocaleDateString();
+            }
+
+            calculateDuration(log);
+            saveAndRefresh();
+            closeModal();
+        }
+    }
+
+    function deleteLog(id) {
+        if (confirm('確定要刪除這筆要板紀錄嗎？')) {
+            boardLogs = boardLogs.filter(item => item.id !== id);
+            saveAndRefresh();
+        }
+    }
+
+    function saveAndRefresh() {
+        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+        renderTable();
+        updateDashboard();
+    }
+
+    // 💡 頂部儀表板更新：結合狀態、等待數、已出板張數、以及「頂部快捷結束按鈕」
+    function updateDashboard() {
+        const machineTypes = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
+        
+        machineTypes.forEach(machine => {
+            const statusArea = document.getElementById(`status-${machine}`);
+            const waitingLogs = boardLogs.filter(log => log.machineType === machine && log.endTimeStr === '-');
+            const doneLogs = boardLogs.filter(log => log.machineType === machine && log.endTimeStr !== '-');
+            
+            const totalDoneQty = doneLogs.reduce((sum, log) => sum + (parseInt(log.qty, 10) || 0), 0);
+
+            if (waitingLogs.length === 0) {
+                // 目前無等待
+                statusArea.innerHTML = `
+                    <span class="text-done">✅ 閒置 / 已出 ${totalDoneQty}張</span>
+                `;
+            } else if (waitingLogs.length === 1) {
+                // 單筆等待：直接在頂部顯示即時時間與專屬快捷結束鈕！
+                const log = waitingLogs[0];
+                calculateDuration(log);
+                statusArea.innerHTML = `
+                    <div style="width: 100%;">
+                        <div style="display: flex; justify-content: space-between; font-size: 14px; align-items: center;">
+                            <span class="text-wait">⏳ 等待中 (<span id="top-duration-${log.id}">${log.duration}分</span>)</span>
+                            <span style="color: #666; font-size: 13px;">${log.qty}張</span>
+                        </div>
+                        <button class="dash-action-btn" onclick="completeBoard(${log.id})">🏁 快捷結束</button>
+                    </div>
+                `;
+            } else {
+                // 多筆等待（例如同時有2張單在等）
+                statusArea.innerHTML = `
+                    <span class="text-wait">⏳ 等待中: ${waitingLogs.length}筆</span>
+                    <span class="text-done">✅ ${totalDoneQty}張</span>
+                `;
+            }
+        });
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('logTableBody');
+        tbody.innerHTML = '';
+
+        if (boardLogs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="color: #888; padding: 20px;">目前尚無要板紀錄</td></tr>`;
+            updateDashboard();
+            return;
+        }
+
+        boardLogs.forEach(log => {
+            const tr = document.createElement('tr');
+            
+            const isWaiting = log.endTimeStr === '-';
+            if (isWaiting) {
+                calculateDuration(log);
+            }
+
+            const statusSpan = isWaiting 
+                ? `<span class="status-waiting">⏳ 等待</span>` 
+                : `<span class="status-done">✅ 完成</span>`;
+            
+            const actionBtn = isWaiting 
+                ? `<button class="btn-success" onclick="completeBoard(${log.id})">🏁 結束</button>` 
+                : `<span style="color:#aaa; font-size:13px;">已結案</span>`;
+
+            let machineBadge = '';
+            if (log.machineType.includes('Nesting')) {
+                machineBadge = `<span class="badge-nesting">${log.machineType}</span>`;
+            } else if (log.machineType.includes('電子鋸')) {
+                machineBadge = `<span class="badge-saw">${log.machineType}</span>`;
+            }
+
+            tr.innerHTML = `
+                <td style="background-color: #f1f5f9;">
+                    <div class="action-flex">
+                        ${actionBtn} 
+                        <button class="btn-warning" onclick="openEditModal(${log.id})">✏️</button>
+                        <button class="btn-danger" onclick="deleteLog(${log.id})">❌</button>
+                    </div>
+                </td>
+                <td><strong>${log.workOrder}</strong></td>
+                <td>${machineBadge}</td>
+                <td>${log.qty}張</td>
+                <td>${statusSpan}</td>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" id="duration-${log.id}">${log.duration}分</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        updateDashboard();
+    }
+
+    // 匯出 Excel 檔 (XML 格式 / 支援 .xlsx 副檔名 / 離線順暢)
+    function exportToExcelXLSX() {
+        if (boardLogs.length === 0) {
+            alert('沒有紀錄可匯出！');
+            return;
+        }
+
+        let xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Worksheet ss:Name="要板紀錄">
+  <Table>
+   <Row>
+    <Cell><Data ss:Type="String">日期</Data></Cell>
+    <Cell><Data ss:Type="String">工單/案名</Data></Cell>
+    <Cell><Data ss:Type="String">要求機台</Data></Cell>
+    <Cell><Data ss:Type="String">數量 (張)</Data></Cell>
+    <Cell><Data ss:Type="String">要板時間(開始)</Data></Cell>
+    <Cell><Data ss:Type="String">給板結束(完成)</Data></Cell>
+    <Cell><Data ss:Type="String">花費時間(分鐘)</Data></Cell>
+    <Cell><Data ss:Type="String">狀態</Data></Cell>
+   </Row>`;
+
+        boardLogs.forEach(log => {
+            const status = log.endTimeStr !== "-" ? "已完成" : "等待給板";
+            xmlContent += `
+   <Row>
+    <Cell><Data ss:Type="String">${escapeXml(log.date)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.workOrder)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.machineType)}</Data></Cell>
+    <Cell><Data ss:Type="Number">${parseInt(log.qty, 10) || 0}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.startTimeStr)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.endTimeStr)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(log.duration)}</Data></Cell>
+    <Cell><Data ss:Type="String">${escapeXml(status)}</Data></Cell>
+   </Row>`;
+        });
+
+        xmlContent += `
+  </Table>
+ </Worksheet>
+</Workbook>`;
+
+        const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute("href", url);
+        link.setAttribute("download", `機台看板紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function escapeXml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+    }
+</script>
+
+</body>
+</html>
