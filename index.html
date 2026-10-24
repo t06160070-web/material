@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>機台領料追蹤與即時看板系統</title>
+    <!-- 引入 SheetJS (XLSX) 函式庫以支援微軟 Excel (.xlsx) 匯出 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 10px; background-color: #f4f6f9; color: #333; font-size: 16px; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
+        h2 { font-size: 20px; border-bottom: 3px solid #007bff; padding-bottom: 8px; margin-top: 5px; margin-bottom: 15px; text-align: center; }
+        
+        /* 四大機台專屬操作卡片區 */
+        .machine-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: 15px; margin-bottom: 25px; }
+        @media(min-width: 768px) { .machine-grid { grid-template-columns: repeat(2, 1fr); } }
+        
+        .machine-card { background: #fff; border: 2px solid #e2e8f0; border-radius: 10px; padding: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+        .machine-card.waiting { border-color: #dc3545; background-color: #fff8f8; }
+        .machine-card.idle { border-color: #28a745; background-color: #f8fff9; }
+        
+        .machine-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 18px; font-weight: bold; }
+        .title-nesting { color: #0d47a1; }
+        .title-saw { color: #1b5e20; }
+        
+        .machine-body { display: flex; flex-direction: column; gap: 10px; }
+        .machine-body input { height: 45px; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; width: 100%; box-sizing: border-box; }
+        
+        .btn-start { background-color: #28a745; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; height: 48px; }
+        .btn-start:active { background-color: #1e7e34; }
+        
+        .btn-complete { background-color: #dc3545; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; height: 48px; animation: pulse 1.5s infinite; }
+        .btn-complete:active { background-color: #bd2130; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.85; }
+            100% { opacity: 1; }
+        }
+
+        .active-info { font-size: 15px; line-height: 1.5; background: #fff; padding: 10px; border-radius: 6px; border: 1px dashed #dc3545; }
+        
+        /* 歷史表格與匯出區 */
+        .section-title { font-size: 18px; font-weight: bold; margin: 20px 0 10px 0; border-left: 4px solid #007bff; padding-left: 8px; }
+        .btn-export { background-color: #17a2b8; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; height: 50px; margin-bottom: 15px; }
+        .btn-export:active { background-color: #117a8b; }
+
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #ddd; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; background: white; min-width: 800px; }
+        th, td { border-bottom: 1px solid #eee; padding: 10px 8px; text-align: center; font-size: 14px; }
+        th { background-color: #f8f9fa; font-weight: bold; border-bottom: 2px solid #ddd; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        
+        .status-waiting { background-color: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .status-done { background-color: #d4edda; color: #155724; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        
+        .btn-warning { background-color: #ffc107; color: #212529; padding: 6px 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-danger { background-color: #dc3545; color: white; padding: 6px 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+        /* 彈窗修改區 */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+        .modal-content { background-color: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); box-sizing: border-box; }
+        .modal-content h3 { margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 8px; text-align: center; }
+        .modal-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+        .modal-field label { font-weight: bold; font-size: 14px; color: #555; }
+        .modal-field input { height: 45px; }
+        .modal-buttons { display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; }
+        .modal-buttons button { flex: 1; height: 45px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>⚙️ 現場機台領料即時控制看板</h2>
+    <p style="font-size: 13px; color: #666; text-align: center; margin-top: -10px; margin-bottom: 20px;">
+        💡 提示：每一台機台一次僅等待一疊板（Nesting 上限約 23 張 / 電子鋸上限約 32 張），可輸入多張混搭訂單。
+    </p>
+
+    <!-- 四大機台專屬操作面板 -->
+    <div class="machine-grid" id="machineGrid">
+        <!-- 動態產生四台機台控制卡片 -->
+    </div>
+
+    <!-- 歷史紀錄與匯出區 -->
+    <div class="section-title">📊 歷史紀錄與數據分析</div>
+    <button class="btn-export" onclick="exportToExcel()">📤 匯出完整 Excel 檔 (支援一週/一個月分析)</button>
+
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>機台名稱</th>
+                    <th>混搭訂單號 / 案名</th>
+                    <th>張數</th>
+                    <th>狀態</th>
+                    <th>花費時間(分)</th>
+                    <th>要板時間</th>
+                    <th>給板結束</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="logTableBody">
+                <!-- 動態生成 -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 修改彈窗 -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>✏️ 修正紀錄</h3>
+        <input type="hidden" id="editId">
+        <div class="modal-field">
+            <label>混搭訂單號 / 案名</label>
+            <input type="text" id="editWorkOrder">
+        </div>
+        <div class="modal-field">
+            <label>張數</label>
+            <input type="number" id="editQty" min="1">
+        </div>
+        <div class="modal-field">
+            <label>要板時間 (開始)</label>
+            <input type="datetime-local" id="editStartTime">
+        </div>
+        <div class="modal-field">
+            <label>給板結束 (完成)</label>
+            <input type="datetime-local" id="editEndTime">
+        </div>
+        <div class="modal-buttons">
+            <button style="background-color: #6c757d;" onclick="closeModal()">取消</button>
+            <button style="background-color: #28a745;" onclick="saveModalEdit()">儲存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const machines = [
+        { name: 'Nesting 內', type: 'nesting', maxQty: 23 },
+        { name: 'Nesting 外', type: 'nesting', maxQty: 23 },
+        { name: '電子鋸 330', type: 'saw', maxQty: 32 },
+        { name: '電子鋸 長風', type: 'saw', maxQty: 32 }
+    ];
+
+    let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
+    let liveTimerInterval = null;
+
+    window.onload = function() {
+        renderUI();
+        startLiveTimer();
+    };
+
+    function startLiveTimer() {
+        if (liveTimerInterval) clearInterval(liveTimerInterval);
+        liveTimerInterval = setInterval(() => {
+            boardLogs.forEach(log => {
+                if (log.endTimeStr === '-') {
+                    const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+                    const currentMs = new Date().getTime();
+                    if (!isNaN(startMs)) {
+                        const currentDuration = ((currentMs - startMs) / 1000 / 60).toFixed(1);
+                        const durationEl = document.getElementById(`live-dur-${log.id}`);
+                        if (durationEl) {
+                            durationEl.innerText = `${currentDuration} 分`;
+                        }
+                    }
+                }
+            });
+        }, 1000);
+    }
+
+    function formatDateTime(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mm = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+    }
+
+    // 發起要板（開始計時）
+    function startRequest(machineName) {
+        const orderInput = document.getElementById(`input-order-${machineName}`);
+        const qtyInput = document.getElementById(`input-qty-${machineName}`);
+
+        const workOrder = orderInput.value.trim();
+        const qty = qtyInput.value.trim();
+
+        if (!workOrder || !qty) {
+            alert('請輸入混搭訂單號與張數！');
+            return;
+        }
+
+        const now = new Date();
+        const newLog = {
+            id: Date.now(),
+            date: now.toLocaleDateString(),
+            machineType: machineName,
+            workOrder: workOrder,
+            qty: parseInt(qty, 10),
+            startTimeStr: formatDateTime(now),
+            endTimeStr: '-',
+            duration: '-'
+        };
+
+        boardLogs.unshift(newLog);
+        saveAndRefresh();
+    }
+
+    // 結束給板
+    function completeRequest(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (!log) return;
+
+        if (confirm(`確定要將機台【${log.machineType}】的疊板（${log.workOrder}）標為給板結束嗎？`)) {
+            const now = new Date();
+            log.endTimeStr = formatDateTime(now);
+            calculateDuration(log);
+            saveAndRefresh();
+        }
+    }
+
+    function calculateDuration(log) {
+        const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+        const endMs = log.endTimeStr === '-' ? new Date().getTime() : new Date(log.endTimeStr.replace(/-/g, '/')).getTime();
+        
+        if (!isNaN(startMs) && !isNaN(endMs)) {
+            log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
+        } else {
+            log.duration = '-';
+        }
+    }
+
+    function saveAndRefresh() {
+        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+        renderUI();
+    }
+
+    // 渲染整個畫面（上方四大機台卡片 + 下方歷史表格）
+    function renderUI() {
+        const grid = document.getElementById('machineGrid');
+        grid.innerHTML = '';
+
+        machines.forEach(m => {
+            // 檢查該機台是否有「等待中」的任務（每台機台同時只能有一個）
+            const activeTask = boardLogs.find(log => log.machineType === m.name && log.endTimeStr === '-');
+            const isWaiting = !!activeTask;
+
+            if (isWaiting) {
+                calculateDuration(activeTask);
+            }
+
+            const card = document.createElement('div');
+            card.className = `machine-card ${isWaiting ? 'waiting' : 'idle'}`;
+            
+            const titleClass = m.type === 'nesting' ? 'title-nesting' : 'title-saw';
+            const icon = m.type === 'nesting' ? '🖥️' : '🪚';
+
+            let bodyHtml = '';
+            if (isWaiting) {
+                // 等待中狀態：顯示計時器與大大的結束按鈕
+                bodyHtml = `
+                    <div class="active-info">
+                        <div style="font-weight: bold; color: #dc3545; margin-bottom: 4px;">⏳ 等待給板中</div>
+                        <div><strong>訂單：</strong>${activeTask.workOrder}</div>
+                        <div><strong>張數：</strong>${activeTask.qty} 張</div>
+                        <div><strong>碼錶：</strong><span id="live-dur-${activeTask.id}" style="color: #d9534f; font-weight: bold; font-size: 18px;">${activeTask.duration} 分</span></div>
+                        <div style="font-size: 12px; color: #666; margin-top: 2px;">開始：${activeTask.startTimeStr}</div>
+                    </div>
+                    <button class="btn-complete" onclick="completeRequest(${activeTask.id})">🏁 結束給板</button>
+                `;
+            } else {
+                // 閒置狀態：輸入訂單與張數，點擊開始
+                bodyHtml = `
+                    <div class="machine-body">
+                        <input type="text" id="input-order-${m.name}" placeholder="輸入混搭訂單號 (例: A01, A02)">
+                        <input type="number" id="input-qty-${m.name}" placeholder="張數 (上限約 ${m.maxQty} 張)" min="1" max="${m.maxQty}">
+                        <button class="btn-start" onclick="startRequest('${m.name}')">🚀 開始計時 (發起要板)</button>
+                    </div>
+                `;
+            }
+
+            card.innerHTML = `
+                <div class="machine-header">
+                    <span class="${titleClass}">${icon} ${m.name}</span>
+                    <span style="font-size: 13px; padding: 3px 8px; border-radius: 4px; background: ${isWaiting ? '#f8d7da' : '#d4edda'}; color: ${isWaiting ? '#721c24' : '#155724'};">
+                        ${isWaiting ? '⚠️ 進行中' : '🟢 閒置'}
+                    </span>
+                </div>
+                ${bodyHtml}
+            `;
+            grid.appendChild(card);
+        });
+
+        // 渲染下方歷史表格
+        renderTableBody();
+    }
+
+    function renderTableBody() {
+        const tbody = document.getElementById('logTableBody');
+        tbody.innerHTML = '';
+
+        if (boardLogs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color: #888; padding: 20px;">目前尚無歷史紀錄</td></tr>`;
+            return;
+        }
+
+        boardLogs.forEach(log => {
+            const tr = document.createElement('tr');
+            const isWaiting = log.endTimeStr === '-';
+            if (isWaiting) calculateDuration(log);
+
+            const statusSpan = isWaiting 
+                ? `<span class="status-waiting">⏳ 等待中</span>` 
+                : `<span class="status-done">✅ 已完成</span>`;
+
+            tr.innerHTML = `
+                <td>${log.date}</td>
+                <td><strong>${log.machineType}</strong></td>
+                <td>${log.workOrder}</td>
+                <td>${log.qty} 張</td>
+                <td>${statusSpan}</td>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};">${log.duration} 分</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+                <td>
+                    <button class="btn-warning" onclick="openEditModal(${log.id})">✏️</button>
+                    <button class="btn-danger" onclick="deleteLog(${log.id})">❌</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function deleteLog(id) {
+        if (confirm('確定要刪除這筆紀錄嗎？')) {
+            boardLogs = boardLogs.filter(item => item.id !== id);
+            saveAndRefresh();
+        }
+    }
+
+    function openEditModal(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            document.getElementById('editId').value = log.id;
+            document.getElementById('editWorkOrder').value = log.workOrder;
+            document.getElementById('editQty').value = log.qty;
+            document.getElementById('editStartTime').value = log.startTimeStr.replace(' ', 'T').substring(0, 16);
+            document.getElementById('editEndTime').value = log.endTimeStr === '-' ? '' : log.endTimeStr.replace(' ', 'T').substring(0, 16);
+            document.getElementById('editModal').style.display = 'flex';
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function saveModalEdit() {
+        const id = parseInt(document.getElementById('editId').value, 10);
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            log.workOrder = document.getElementById('editWorkOrder').value.trim();
+            log.qty = parseInt(document.getElementById('editQty').value, 10) || 0;
+            
+            const startVal = document.getElementById('editStartTime').value;
+            if (startVal) {
+                log.startTimeStr = startVal.replace('T', ' ') + ':00';
+                log.date = new Date(startVal).toLocaleDateString();
+            }
+
+            const endVal = document.getElementById('editEndTime').value;
+            log.endTimeStr = endVal ? endVal.replace('T', ' ') + ':00' : '-';
+
+            calculateDuration(log);
+            saveAndRefresh();
+            closeModal();
+        }
+    }
+
+    // 匯出 Excel
+    function exportToExcel() {
+        if (boardLogs.length === 0) {
+            alert('沒有紀錄可匯出！');
+            return;
+        }
+
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "機台名稱": log.machineType,
+            "混搭訂單號 / 案名": log.workOrder,
+            "張數": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待中"
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "生產與領料紀錄");
+
+        worksheet['!cols'] = [
+            {wch: 12}, {wch: 14}, {wch: 22}, {wch: 10}, 
+            {wch: 20}, {wch: 20}, {wch: 14}, {wch: 12}
+        ];
+
+        const fileName = `機台領料分析紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+    }
+</script>
+
+</body>
+</html>
