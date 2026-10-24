@@ -43,7 +43,6 @@
 
     <!-- 四台機台固定面板 -->
     <div class="machine-grid">
-        <!-- 1. Nesting 內 -->
         <div class="machine-card idle" id="card-Nesting 內">
             <div class="machine-header" style="color: #0d47a1;">🖥️ Nesting 內</div>
             <div id="content-Nesting 內">
@@ -51,7 +50,6 @@
                 <button class="btn-start" onclick="openStartModal('Nesting 內')">🚀 開始要板</button>
             </div>
         </div>
-        <!-- 2. Nesting 外 -->
         <div class="machine-card idle" id="card-Nesting 外">
             <div class="machine-header" style="color: #0d47a1;">🖥️ Nesting 外</div>
             <div id="content-Nesting 外">
@@ -59,7 +57,6 @@
                 <button class="btn-start" onclick="openStartModal('Nesting 外')">🚀 開始要板</button>
             </div>
         </div>
-        <!-- 3. 電子鋸 330 -->
         <div class="machine-card idle" id="card-電子鋸 330">
             <div class="machine-header" style="color: #1b5e20;">🪚 電子鋸 330</div>
             <div id="content-電子鋸 330">
@@ -67,7 +64,6 @@
                 <button class="btn-start" onclick="openStartModal('電子鋸 330')">🚀 開始要板</button>
             </div>
         </div>
-        <!-- 4. 電子鋸 長風 -->
         <div class="machine-card idle" id="card-電子鋸 長風">
             <div class="machine-header" style="color: #1b5e20;">🪚 電子鋸 長風</div>
             <div id="content-電子鋸 長風">
@@ -99,7 +95,7 @@
     </div>
 </div>
 
-<!-- 輸入彈窗 -->
+<!-- 開始要板輸入彈窗 -->
 <div id="startModal" class="modal">
     <div class="modal-content">
         <h3 id="startModalTitle" style="margin-top:0; text-align:center;">🚀 發起要板</h3>
@@ -115,6 +111,34 @@
         <div style="display: flex; gap: 10px; margin-top: 15px;">
             <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="closeStartModal()">取消</button>
             <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="confirmStartRequest()">確認開始</button>
+        </div>
+    </div>
+</div>
+
+<!-- 修改紀錄彈窗 -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin-top:0; text-align:center;">✏️ 修正紀錄</h3>
+        <input type="hidden" id="editId">
+        <div class="modal-field">
+            <label style="font-weight:bold; font-size:13px;">混搭訂單號 / 案名</label>
+            <input type="text" id="editWorkOrder">
+        </div>
+        <div class="modal-field">
+            <label style="font-weight:bold; font-size:13px;">張數</label>
+            <input type="number" id="editQty" min="1">
+        </div>
+        <div class="modal-field">
+            <label style="font-weight:bold; font-size:13px;">要板時間 (開始)</label>
+            <input type="datetime-local" id="editStartTime">
+        </div>
+        <div class="modal-field">
+            <label style="font-weight:bold; font-size:13px;">給板結束 (完成)</label>
+            <input type="datetime-local" id="editEndTime">
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="closeEditModal()">取消</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="saveModalEdit()">儲存</button>
         </div>
     </div>
 </div>
@@ -135,8 +159,7 @@
                 const currentMs = new Date().getTime();
                 if (!isNaN(startMs)) {
                     const mins = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-                    const el = document.getElementById(`dur-${log.id}`);
-                    if (el) el.innerText = `${mins} 分`;
+                    const el = document.getElementById(`dur-${log.id}`); if (el) el.innerText = `${mins} 分`;
                 }
             }
         });
@@ -149,59 +172,64 @@
         const hh = String(date.getHours()).padStart(2, '0');
         const mm = String(date.getMinutes()).padStart(2, '0');
         const ss = String(date.getSeconds()).padStart(2, '0');
-        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+        return `${y}-${m}-${d}${hh}:${mm}:${ss}`;
     }
 
     function openStartModal(machineName) {
         document.getElementById('targetMachine').value = machineName;
-        document.getElementById('startModalTitle').innerText = `🚀 ${machineName} 發起要板`;
-        document.getElementById('modalWorkOrder').value = '';
-        document.getElementById('modalQty').value = '';
-        document.getElementById('startModal').style.display = 'flex';
-        setTimeout(() => document.getElementById('modalWorkOrder').focus(), 100);
-    }
-
-    function closeStartModal() {
-        document.getElementById('startModal').style.display = 'none';
-    }
-
-    function confirmStartRequest() {
-        const machineName = document.getElementById('targetMachine').value;
-        const workOrder = document.getElementById('modalWorkOrder').value.trim();
-        const qty = document.getElementById('modalQty').value.trim();
-
-        if (!workOrder || !qty) {
-            alert('請完整輸入訂單號與張數！');
-            return;
-        }
-
-        const now = new Date();
-        boardLogs.unshift({
-            id: Date.now(),
-            date: now.toLocaleDateString(),
-            machineType: machineName,
-            workOrder: workOrder,
-            qty: parseInt(qty, 10),
-            startTimeStr: formatDateTime(now),
-            endTimeStr: '-',
-            duration: '-'
-        });
-
-        saveAndRefresh();
-        closeStartModal();
-    }
-
-    function completeRequest(id) {
-        const log = boardLogs.find(item => item.id === id);
-        if (!log) return;
-
-        if (confirm(`確定要將【${log.machineType}】標為給板結束嗎？`)) {
+        document.getElementById('startModalTitle').innerText = `🚀 ${machineName} 發起要板`; document.getElementById('modalWorkOrder').value = ''; document.getElementById('modalQty').value = ''; document.getElementById('startModal').style.display = 'flex'; setTimeout(() => document.getElementById('modalWorkOrder').focus(), 100); }  function closeStartModal() { document.getElementById('startModal').style.display = 'none'; }  function confirmStartRequest() { const machineName = document.getElementById('targetMachine').value; const workOrder = document.getElementById('modalWorkOrder').value.trim(); const qty = document.getElementById('modalQty').value.trim();  if (!workOrder \vert{}\vert{} !qty) { alert('請完整輸入訂單號與張數！'); return; }  const now = new Date(); boardLogs.unshift({ id: Date.now(), date: now.toLocaleDateString(), machineType: machineName, workOrder: workOrder, qty: parseInt(qty, 10), startTimeStr: formatDateTime(now), endTimeStr: '-', duration: '-' });  saveAndRefresh(); closeStartModal(); }  function completeRequest(id) { const log = boardLogs.find(item => item.id === id); if (!log) return;  if (confirm(`確定要將【${log.machineType}】標為給板結束嗎？`)) {
             const now = new Date();
             log.endTimeStr = formatDateTime(now);
             const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
             const endMs = now.getTime();
             log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
             saveAndRefresh();
+        }
+    }
+
+    // 開啟修改視窗
+    function openEditModal(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            document.getElementById('editId').value = log.id;
+            document.getElementById('editWorkOrder').value = log.workOrder;
+            document.getElementById('editQty').value = log.qty;
+            document.getElementById('editStartTime').value = log.startTimeStr.replace(' ', 'T').substring(0, 16);
+            document.getElementById('editEndTime').value = log.endTimeStr === '-' ? '' : log.endTimeStr.replace(' ', 'T').substring(0, 16);
+            document.getElementById('editModal').style.display = 'flex';
+        }
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function saveModalEdit() {
+        const id = parseInt(document.getElementById('editId').value, 10);
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            log.workOrder = document.getElementById('editWorkOrder').value.trim();
+            log.qty = parseInt(document.getElementById('editQty').value, 10) || 0;
+            
+            const startVal = document.getElementById('editStartTime').value;
+            if (startVal) {
+                log.startTimeStr = startVal.replace('T', ' ') + ':00';
+                log.date = new Date(startVal).toLocaleDateString();
+            }
+
+            const endVal = document.getElementById('editEndTime').value;
+            log.endTimeStr = endVal ? endVal.replace('T', ' ') + ':00' : '-';
+
+            if (log.endTimeStr !== '-') {
+                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+                const endMs = new Date(log.endTimeStr.replace(/-/g, '/')).getTime();
+                log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
+            } else {
+                log.duration = '-';
+            }
+
+            saveAndRefresh();
+            closeEditModal();
         }
     }
 
@@ -218,10 +246,8 @@
     }
 
     function refreshView() {
-        // 更新四張卡片狀態
         machineNames.forEach(mName => {
-            const card = document.getElementById(`card-${mName}`);
-            const content = document.getElementById(`content-${mName}`);
+            const card = document.getElementById(`card-${mName}`); const content = document.getElementById(`content-${mName}`);
             const activeTask = boardLogs.find(log => log.machineType === mName && log.endTimeStr === '-');
 
             if (activeTask) {
@@ -242,7 +268,6 @@
             }
         });
 
-        // 更新下方表格
         const tbody = document.getElementById('logTableBody');
         tbody.innerHTML = '';
         if (boardLogs.length === 0) {
@@ -265,25 +290,4 @@
                 <td>${log.workOrder}</td>
                 <td>${log.qty} 張</td>
                 <td>${isWaiting ? '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px;">⏳等待中</span>' : '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:4px;">✅已完成</span>'}</td>
-                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" ${isWaiting ? `id="dur-${log.id}"` : ''}>${mins} 分</strong></td>
-                <td>${log.startTimeStr}</td>
-                <td>${log.endTimeStr}</td>
-                <td>
-                    <button style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="deleteLog(${log.id})">❌</button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    function exportToExcel() {
-        if (boardLogs.length === 0) { alert('沒有紀錄可匯出！'); return; }
-        const ws = XLSX.utils.json_to_sheet(boardLogs);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "生產與領料紀錄");
-        XLSX.writeFile(wb, `機台領料紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    }
-</script>
-
-</body>
-</html>
+                <td><strong style="color: ${isWaiting ?
