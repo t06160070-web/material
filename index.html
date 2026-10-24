@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>機台領料追蹤系統</title>
+    <title>機台領料追蹤系統 - V6</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 8px; background-color: #f4f6f9; color: #333; font-size: 15px; }
@@ -37,41 +37,41 @@
 <body>
 
 <div class="container">
-    <h2>⚡ 機台領料即時控制看板 (V5 測試版)</h2>
+    <h2>⚡ 機台領料即時控制看板 (V6 穩定版)</h2>
 
-    <!-- 四台機台固定面板 (直接寫死 onclick 確保 100% 觸發) -->
+    <!-- 四台機台固定面板 -->
     <div class="machine-grid">
         <div class="machine-card idle" id="card-Nesting 內">
             <div class="machine-header" style="color: #0d47a1;">🖥️ Nesting 內</div>
             <div id="content-Nesting 內">
                 <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start" onclick="openStartModal('Nesting 內')">🚀 開始要板</button>
+                <button class="btn-start js-start-btn" data-machine="Nesting 內">🚀 開始要板</button>
             </div>
         </div>
         <div class="machine-card idle" id="card-Nesting 外">
             <div class="machine-header" style="color: #0d47a1;">🖥️ Nesting 外</div>
             <div id="content-Nesting 外">
                 <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start" onclick="openStartModal('Nesting 外')">🚀 開始要板</button>
+                <button class="btn-start js-start-btn" data-machine="Nesting 外">🚀 開始要板</button>
             </div>
         </div>
         <div class="machine-card idle" id="card-電子鋸 330">
             <div class="machine-header" style="color: #1b5e20;">🪚 電子鋸 330</div>
             <div id="content-電子鋸 330">
                 <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start" onclick="openStartModal('電子鋸 330')">🚀 開始要板</button>
+                <button class="btn-start js-start-btn" data-machine="電子鋸 330">🚀 開始要板</button>
             </div>
         </div>
         <div class="machine-card idle" id="card-電子鋸 長風">
             <div class="machine-header" style="color: #1b5e20;">🪚 電子鋸 長風</div>
             <div id="content-電子鋸 長風">
                 <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start" onclick="openStartModal('電子鋸 長風')">🚀 開始要板</button>
+                <button class="btn-start js-start-btn" data-machine="電子鋸 長風">🚀 開始要板</button>
             </div>
         </div>
     </div>
 
-    <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔</button>
+    <button class="btn-export" id="exportBtn">📤 匯出 Excel 檔</button>
 
     <div class="table-responsive">
         <table>
@@ -107,8 +107,8 @@
             <input type="number" id="modalQty" placeholder="請輸入張數" min="1">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
-            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="closeStartModal()">取消</button>
-            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="confirmStartRequest()">確認開始</button>
+            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" id="cancelStartBtn">取消</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="confirmStartBtn">確認開始</button>
         </div>
     </div>
 </div>
@@ -135,8 +135,8 @@
             <input type="datetime-local" id="editEndTime">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
-            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="closeEditModal()">取消</button>
-            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="saveModalEdit()">儲存</button>
+            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" id="cancelEditBtn">取消</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="saveEditBtn">儲存</button>
         </div>
     </div>
 </div>
@@ -145,10 +145,21 @@
     let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
     const machineNames = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
 
-    window.onload = function() {
+    // 確保網頁載入完成後才綁定所有事件
+    window.addEventListener('DOMContentLoaded', function() {
+        bindGlobalEvents();
         refreshView();
         setInterval(updateTimers, 1000);
-    };
+    });
+
+    function bindGlobalEvents() {
+        // 綁定彈窗按鈕
+        document.getElementById('cancelStartBtn').addEventListener('click', closeStartModal);
+        document.getElementById('confirmStartBtn').addEventListener('click', confirmStartRequest);
+        document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+        document.getElementById('saveEditBtn').addEventListener('click', saveModalEdit);
+        document.getElementById('exportBtn').addEventListener('click', exportToExcel);
+    }
 
     function updateTimers() {
         boardLogs.forEach(log => {
@@ -157,7 +168,8 @@
                 const currentMs = new Date().getTime();
                 if (!isNaN(startMs)) {
                     const mins = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-                    const el = document.getElementById(`dur-${log.id}`); if (el) el.innerText = `${mins} 分`;
+                    const el = document.getElementById(`dur-${log.id}`);
+                    if (el) el.innerText = `${mins} 分`;
                 }
             }
         });
@@ -170,13 +182,53 @@
         const hh = String(date.getHours()).padStart(2, '0');
         const mm = String(date.getMinutes()).padStart(2, '0');
         const ss = String(date.getSeconds()).padStart(2, '0');
-        return `${y}-${m}-${d}${hh}:${mm}:${ss}`;
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
     }
 
     function openStartModal(machineName) {
-        // 如果點下去有跳出這個提示，代表按鈕絕對正常運作了！
         document.getElementById('targetMachine').value = machineName;
-        document.getElementById('startModalTitle').innerText = `🚀 ${machineName} 發起要板`; document.getElementById('modalWorkOrder').value = ''; document.getElementById('modalQty').value = ''; document.getElementById('startModal').style.display = 'flex'; setTimeout(() => document.getElementById('modalWorkOrder').focus(), 100); }  function closeStartModal() { document.getElementById('startModal').style.display = 'none'; }  function confirmStartRequest() { const machineName = document.getElementById('targetMachine').value; const workOrder = document.getElementById('modalWorkOrder').value.trim(); const qty = document.getElementById('modalQty').value.trim();  if (!workOrder \vert{}\vert{} !qty) { alert('請完整輸入訂單號與張數！'); return; }  const now = new Date(); boardLogs.unshift({ id: Date.now(), date: now.toLocaleDateString(), machineType: machineName, workOrder: workOrder, qty: parseInt(qty, 10), startTimeStr: formatDateTime(now), endTimeStr: '-', duration: '-' });  saveAndRefresh(); closeStartModal(); }  function completeRequest(id) { const log = boardLogs.find(item => item.id === id); if (!log) return;  if (confirm(`確定要將【${log.machineType}】標為給板結束嗎？`)) {
+        document.getElementById('startModalTitle').innerText = `🚀 ${machineName} 發起要板`;
+        document.getElementById('modalWorkOrder').value = '';
+        document.getElementById('modalQty').value = '';
+        document.getElementById('startModal').style.display = 'flex';
+        setTimeout(() => document.getElementById('modalWorkOrder').focus(), 100);
+    }
+
+    function closeStartModal() {
+        document.getElementById('startModal').style.display = 'none';
+    }
+
+    function confirmStartRequest() {
+        const machineName = document.getElementById('targetMachine').value;
+        const workOrder = document.getElementById('modalWorkOrder').value.trim();
+        const qty = document.getElementById('modalQty').value.trim();
+
+        if (!workOrder || !qty) {
+            alert('請完整輸入訂單號與張數！');
+            return;
+        }
+
+        const now = new Date();
+        boardLogs.unshift({
+            id: Date.now(),
+            date: now.toLocaleDateString(),
+            machineType: machineName,
+            workOrder: workOrder,
+            qty: parseInt(qty, 10),
+            startTimeStr: formatDateTime(now),
+            endTimeStr: '-',
+            duration: '-'
+        });
+
+        saveAndRefresh();
+        closeStartModal();
+    }
+
+    function completeRequest(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (!log) return;
+
+        if (confirm(`確定要將【${log.machineType}】標為給板結束嗎？`)) {
             const now = new Date();
             log.endTimeStr = formatDateTime(now);
             const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
@@ -245,7 +297,8 @@
 
     function refreshView() {
         machineNames.forEach(mName => {
-            const card = document.getElementById(`card-${mName}`); const content = document.getElementById(`content-${mName}`);
+            const card = document.getElementById(`card-${mName}`);
+            const content = document.getElementById(`content-${mName}`);
             const activeTask = boardLogs.find(log => log.machineType === mName && log.endTimeStr === '-');
 
             if (activeTask) {
@@ -255,15 +308,23 @@
                 content.innerHTML = `
                     <div style="color: #dc3545; font-weight: bold; font-size: 11px; text-align:center;">⏳ 等待中</div>
                     <div id="dur-${activeTask.id}" style="color: #d9534f; font-weight: bold; font-size: 16px; margin: 2px 0; text-align:center;">${mins} 分</div>
-                    <button class="btn-complete" onclick="completeRequest(${activeTask.id})">🏁 結束</button>
+                    <button class="btn-complete" id="complete-btn-${activeTask.id}">🏁 結束</button>
                 `;
+                document.getElementById(`complete-btn-${activeTask.id}`).addEventListener('click', () => completeRequest(activeTask.id));
             } else {
                 card.className = 'machine-card idle';
                 content.innerHTML = `
                     <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                    <button class="btn-start" onclick="openStartModal('${mName}')">🚀 開始要板</button>
+                    <button class="btn-start js-start-btn" data-machine="${mName}">🚀 開始要板</button>
                 `;
             }
+        });
+
+        // 重新批量綁定所有「開始要板」按鈕事件
+        document.querySelectorAll('.js-start-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                openStartModal(this.getAttribute('data-machine'));
+            });
         });
 
         const tbody = document.getElementById('logTableBody');
@@ -288,4 +349,37 @@
                 <td>${log.workOrder}</td>
                 <td>${log.qty} 張</td>
                 <td>${isWaiting ? '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px;">⏳等待中</span>' : '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:4px;">✅已完成</span>'}</td>
-                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" ${isWaiting ? `id="dur-${log.id}"` : ''}>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" ${isWaiting ? `id="dur-${log.id}"` : ''}>${mins} 分</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+                <td>
+                    <button style="background:#ffc107; color:#212529; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold;" class="edit-btn" data-id="${log.id}">✏️</button>
+                    <button style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" class="del-btn" data-id="${log.id}">❌</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                openEditModal(parseInt(this.getAttribute('data-id'), 10));
+            });
+        });
+        document.querySelectorAll('.del-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                deleteLog(parseInt(this.getAttribute('data-id'), 10));
+            });
+        });
+    }
+
+    function exportToExcel() {
+        if (boardLogs.length === 0) { alert('沒有紀錄可匯出！'); return; }
+        const ws = XLSX.utils.json_to_sheet(boardLogs);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "生產與領料紀錄");
+        XLSX.writeFile(wb, `機台領料紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }
+</script>
+
+</body>
+</html>
