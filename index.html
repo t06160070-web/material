@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>機台領料追蹤系統</title>
+    <title>機台領料追蹤系統 - V7-Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 8px; background-color: #f4f6f9; color: #333; font-size: 15px; }
@@ -37,7 +37,7 @@
 <body>
 
 <div class="container">
-    <h2>⚡ 機台領料即時控制看板</h2>
+    <h2>⚡ 機台領料即時控制看板 (V7-Fix)</h2>
 
     <div class="machine-grid">
         <div class="machine-card idle" id="card-Nesting 內">
@@ -130,3 +130,264 @@
             <input type="datetime-local" id="editStartTime">
         </div>
         <div class="modal-field">
+            <label style="font-weight:bold; font-size:13px;">給板結束 (完成)</label>
+            <input type="datetime-local" id="editEndTime">
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" id="cancelEditBtn">取消</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="saveEditBtn">儲存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
+    const machineNames = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
+
+    window.addEventListener('DOMContentLoaded', function() {
+        bindGlobalEvents();
+        refreshView();
+        setInterval(updateTimers, 1000);
+    });
+
+    function bindGlobalEvents() {
+        document.getElementById('cancelStartBtn').addEventListener('click', closeStartModal);
+        document.getElementById('confirmStartBtn').addEventListener('click', confirmStartRequest);
+        document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+        document.getElementById('saveEditBtn').addEventListener('click', saveModalEdit);
+        document.getElementById('exportBtn').addEventListener('click', exportToExcel);
+    }
+
+    function updateTimers() {
+        boardLogs.forEach(log => {
+            if (log.endTimeStr === '-') {
+                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+                const currentMs = new Date().getTime();
+                if (!isNaN(startMs)) {
+                    const mins = ((currentMs - startMs) / 1000 / 60).toFixed(1);
+                    const el = document.getElementById(`dur-${log.id}`);
+                    if (el) el.innerText = `${mins} 分`;
+                }
+            }
+        });
+    }
+
+    function formatDateTime(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mm = String(date.getMinutes()).padStart(2, '0');
+        const ss = String(date.getSeconds()).padStart(2, '0');
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+    }
+
+    function openStartModal(machineName) {
+        document.getElementById('targetMachine').value = machineName;
+        document.getElementById('startModalTitle').innerText = `🚀 ${machineName} 發起要板`;
+        document.getElementById('modalWorkOrder').value = '';
+        document.getElementById('modalQty').value = '';
+        document.getElementById('startModal').style.display = 'flex';
+        setTimeout(() => document.getElementById('modalWorkOrder').focus(), 100);
+    }
+
+    function closeStartModal() {
+        document.getElementById('startModal').style.display = 'none';
+    }
+
+    function confirmStartRequest() {
+        const machineName = document.getElementById('targetMachine').value;
+        const workOrder = document.getElementById('modalWorkOrder').value.trim();
+        const qty = document.getElementById('modalQty').value.trim();
+
+        if (!workOrder || !qty) {
+            alert('請完整輸入訂單號與張數！');
+            return;
+        }
+
+        const now = new Date();
+        boardLogs.unshift({
+            id: Date.now(),
+            date: now.toLocaleDateString(),
+            machineType: machineName,
+            workOrder: workOrder,
+            qty: parseInt(qty, 10),
+            startTimeStr: formatDateTime(now),
+            endTimeStr: '-',
+            duration: '-'
+        });
+
+        saveAndRefresh();
+        closeStartModal();
+    }
+
+    function completeRequest(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (!log) return;
+
+        if (confirm(`確定要將【${log.machineType}】標為給板結束嗎？`)) {
+            const now = new Date();
+            log.endTimeStr = formatDateTime(now);
+            const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+            const endMs = now.getTime();
+            log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
+            saveAndRefresh();
+        }
+    }
+
+    function openEditModal(id) {
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            document.getElementById('editId').value = log.id;
+            document.getElementById('editWorkOrder').value = log.workOrder;
+            document.getElementById('editQty').value = log.qty;
+            document.getElementById('editStartTime').value = log.startTimeStr.replace(' ', 'T').substring(0, 16);
+            document.getElementById('editEndTime').value = log.endTimeStr === '-' ? '' : log.endTimeStr.replace(' ', 'T').substring(0, 16);
+            document.getElementById('editModal').style.display = 'flex';
+        }
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function saveModalEdit() {
+        const id = parseInt(document.getElementById('editId').value, 10);
+        const log = boardLogs.find(item => item.id === id);
+        if (log) {
+            log.workOrder = document.getElementById('editWorkOrder').value.trim();
+            log.qty = parseInt(document.getElementById('editQty').value, 10) || 0;
+            
+            const startVal = document.getElementById('editStartTime').value;
+            if (startVal) {
+                log.startTimeStr = startVal.replace('T', ' ') + ':00';
+                log.date = new Date(startVal).toLocaleDateString();
+            }
+
+            const endVal = document.getElementById('editEndTime').value;
+            log.endTimeStr = endVal ? endVal.replace('T', ' ') + ':00' : '-';
+
+            if (log.endTimeStr !== '-') {
+                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+                const endMs = new Date(log.endTimeStr.replace(/-/g, '/')).getTime();
+                log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
+            } else {
+                log.duration = '-';
+            }
+
+            saveAndRefresh();
+            closeEditModal();
+        }
+    }
+
+    function deleteLog(id) {
+        if (confirm('確定刪除此紀錄？')) {
+            boardLogs = boardLogs.filter(item => item.id !== id);
+            saveAndRefresh();
+        }
+    }
+
+    function saveAndRefresh() {
+        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+        refreshView();
+    }
+
+    function refreshView() {
+        machineNames.forEach(mName => {
+            const card = document.getElementById(`card-${mName}`);
+            const content = document.getElementById(`content-${mName}`);
+            const activeTask = boardLogs.find(log => log.machineType === mName && log.endTimeStr === '-');
+
+            if (activeTask) {
+                card.className = 'machine-card waiting';
+                const startMs = new Date(activeTask.startTimeStr.replace(/-/g, '/')).getTime();
+                const mins = ((new Date().getTime() - startMs) / 1000 / 60).toFixed(1);
+                content.innerHTML = `
+                    <div style="color: #dc3545; font-weight: bold; font-size: 11px; text-align:center;">⏳ 等待中</div>
+                    <div id="dur-${activeTask.id}" style="color: #d9534f; font-weight: bold; font-size: 16px; margin: 2px 0; text-align:center;">${mins} 分</div>
+                    <button class="btn-complete" id="complete-btn-${activeTask.id}">🏁 結束</button>
+                `;
+                document.getElementById(`complete-btn-${activeTask.id}`).addEventListener('click', () => completeRequest(activeTask.id));
+            } else {
+                card.className = 'machine-card idle';
+                content.innerHTML = `
+                    <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
+                    <button class="btn-start js-start-btn" data-machine="${mName}">🚀 開始要板</button>
+                `;
+            }
+        });
+
+        document.querySelectorAll('.js-start-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                openStartModal(this.getAttribute('data-machine'));
+            });
+        });
+
+        const tbody = document.getElementById('logTableBody');
+        tbody.innerHTML = '';
+        if (boardLogs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color: #888; padding: 15px;">目前尚無歷史紀錄</td></tr>`;
+            return;
+        }
+
+        boardLogs.forEach(log => {
+            const tr = document.createElement('tr');
+            const isWaiting = log.endTimeStr === '-';
+            let mins = log.duration;
+            if (isWaiting) {
+                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+                mins = ((new Date().getTime() - startMs) / 1000 / 60).toFixed(1);
+            }
+
+            tr.innerHTML = `
+                <td>${log.date}</td>
+                <td><strong>${log.machineType}</strong></td>
+                <td>${log.workOrder}</td>
+                <td>${log.qty} 張</td>
+                <td>${isWaiting ? '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px;">⏳等待中</span>' : '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:4px;">✅已完成</span>'}</td>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" ${isWaiting ? `id="dur-${log.id}"` : ''}>${mins} 分</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+                <td>
+                    <button style="background:#ffc107; color:#212529; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold;" class="edit-btn" data-id="${log.id}">✏️</button>
+                    <button style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" class="del-btn" data-id="${log.id}">❌</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                openEditModal(parseInt(this.getAttribute('data-id'), 10));
+            });
+        });
+        document.querySelectorAll('.del-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                deleteLog(parseInt(this.getAttribute('data-id'), 10));
+            });
+        });
+    }
+
+    function exportToExcel() {
+        if (boardLogs.length === 0) { alert('沒有紀錄可匯出！'); return; }
+        
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "機台名稱": log.machineType,
+            "混搭訂單號 / 案名": log.workOrder,
+            "張數": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待中"
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "生產與領料紀錄");
+        XLSX.writeFile(wb, `機台領料紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }
+</script>
+
+</body>
+</html>
