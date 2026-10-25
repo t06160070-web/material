@@ -63,7 +63,7 @@
     </div>
 
     <div style="font-size: 16px; font-weight: bold; margin: 15px 0 8px 0; border-left: 4px solid #007bff; padding-left: 6px;">📊 正式歷史紀錄與數據分析</div>
-    <button class="btn-export" id="exportBtn">📤 匯出 Excel 檔</button>
+    <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔</button>
 
     <div class="table-responsive">
         <table>
@@ -99,8 +99,8 @@
             <input type="number" id="modalQty" placeholder="請輸入張數" min="1">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
-            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" id="cancelStartBtn">取消</button>
-            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="confirmStartBtn">確認要板</button>
+            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="closeStartModal()">取消</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="confirmStartRequest()">確認要板</button>
         </div>
     </div>
 </div>
@@ -127,8 +127,8 @@
             <input type="datetime-local" id="editEndTime">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
-            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" id="cancelEditBtn">取消</button>
-            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="saveEditBtn">儲存</button>
+            <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="closeEditModal()">取消</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" onclick="saveModalEdit()">儲存</button>
         </div>
     </div>
 </div>
@@ -138,19 +138,10 @@
     let machineStates = JSON.parse(localStorage.getItem('machineStates')) || {};
     const machineNames = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
 
-    window.addEventListener('DOMContentLoaded', function() {
-        bindGlobalEvents();
+    window.onload = function() {
         refreshView();
         setInterval(mainTick, 1000);
-    });
-
-    function bindGlobalEvents() {
-        document.getElementById('cancelStartBtn').addEventListener('click', closeStartModal);
-        document.getElementById('confirmStartBtn').addEventListener('click', confirmStartRequest);
-        document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
-        document.getElementById('saveEditBtn').addEventListener('click', saveModalEdit);
-        document.getElementById('exportBtn').addEventListener('click', exportToExcel);
-    }
+    };
 
     function mainTick() {
         let changed = false;
@@ -267,7 +258,6 @@
         refreshView();
     }
 
-    // 裁板中途手動點擊提前結束
     function finishSawingEarly(machineName) {
         if (confirm(`確定要將【${machineName}】提前結束並恢復閒置嗎？`)) {
             delete machineStates[machineName];
@@ -340,7 +330,7 @@
                 card.className = 'machine-card idle';
                 content.innerHTML = `
                     <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                    <button class="btn-action js-start-btn" data-machine="${mName}" style="background-color: #28a745;">🚀 開始要板</button>
+                    <button class="btn-action" onclick="openStartModal('${mName}')" style="background-color: #28a745;">🚀 開始要板</button>
                 `;
             } else if (m.state === 'waiting') {
                 card.className = 'machine-card waiting';
@@ -364,12 +354,6 @@
             }
         });
 
-        document.querySelectorAll('.js-start-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                openStartModal(this.getAttribute('data-machine'));
-            });
-        });
-
         const tbody = document.getElementById('logTableBody');
         tbody.innerHTML = '';
         if (boardLogs.length === 0) {
@@ -379,4 +363,46 @@
 
         boardLogs.forEach(log => {
             const tr = document.createElement('tr');
-            const
+            const isWaiting = log.endTimeStr === '-';
+
+            tr.innerHTML = `
+                <td>${log.date}</td>
+                <td><strong>${log.machineType}</strong></td>
+                <td>${log.workOrder}</td>
+                <td>${log.qty} 張</td>
+                <td>${isWaiting ? '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px;">🟡等待中</span>' : '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:4px;">✅已完成</span>'}</td>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};">${log.duration} 分</strong></td>
+                <td>${log.startTimeStr}</td>
+                <td>${log.endTimeStr}</td>
+                <td>
+                    <button style="background:#ffc107; color:#212529; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold;" onclick="openEditModal(${log.id})">✏️</button>
+                    <button style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="deleteLog(${log.id})">❌</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function exportToExcel() {
+        if (boardLogs.length === 0) { alert('沒有歷史紀錄可匯出！'); return; }
+        
+        const excelData = boardLogs.map(log => ({
+            "日期": log.date,
+            "機台名稱": log.machineType,
+            "混搭訂單號 / 案名": log.workOrder,
+            "張數": log.qty,
+            "要板時間(開始)": log.startTimeStr,
+            "給板結束(完成)": log.endTimeStr,
+            "花費時間(分鐘)": log.duration,
+            "狀態": log.endTimeStr !== "-" ? "等待中" : "已完成"
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "生產與領料紀錄");
+        XLSX.writeFile(wb, `機台領料紀錄_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }
+</script>
+
+</body>
+</html>
