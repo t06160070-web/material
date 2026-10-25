@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>機台領料追蹤系統 - V7-Fix</title>
+    <title>機台領料與三階段追蹤看板</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 8px; background-color: #f4f6f9; color: #333; font-size: 15px; }
@@ -13,14 +13,14 @@
         .machine-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 15px; }
         @media(min-width: 768px) { .machine-grid { grid-template-columns: repeat(4, 1fr); } }
         
-        .machine-card { background: #fff; border: 2px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; min-height: 110px; }
-        .machine-card.waiting { border-color: #dc3545; background-color: #fff8f8; }
+        .machine-card { background: #fff; border: 2px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; min-height: 120px; }
         .machine-card.idle { border-color: #28a745; background-color: #f8fff9; }
+        .machine-card.waiting { border-color: #ffc107; background-color: #fffdf0; }
+        .machine-card.sawing { border-color: #dc3545; background-color: #fff8f8; }
         
-        .machine-header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 6px; }
+        .machine-header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
         
-        .btn-start { background-color: #28a745; color: white; border: none; padding: 8px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; width: 100%; height: 40px; }
-        .btn-complete { background-color: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; width: 100%; height: 40px; }
+        .btn-action { background-color: #28a745; color: white; border: none; padding: 8px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; height: 38px; margin-top: 4px; }
         .btn-export { background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; width: 100%; height: 45px; margin-bottom: 12px; }
         
         .table-responsive { width: 100%; overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; }
@@ -37,40 +37,33 @@
 <body>
 
 <div class="container">
-    <h2>⚡ 機台領料即時控制看板 (V7-Fix)</h2>
+    <h2>⚡ 機台三階段領料與裁板即時看板</h2>
+    <p style="font-size: 12px; color: #666; text-align: center; margin-top: -6px; margin-bottom: 12px;">
+        💡 模式說明：🟢 <strong>閒置</strong> ➔ 🟡 <strong>等待</strong> (已紀錄歷史) ➔ 🔴 <strong>裁板中</strong> (自動倒數，結束回閒置)。
+    </p>
 
+    <!-- 四台機台固定面板 -->
     <div class="machine-grid">
         <div class="machine-card idle" id="card-Nesting 內">
             <div class="machine-header" style="color: #0d47a1;">🖥️ Nesting 內</div>
-            <div id="content-Nesting 內">
-                <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start js-start-btn" data-machine="Nesting 內">🚀 開始要板</button>
-            </div>
+            <div id="content-Nesting 內"></div>
         </div>
         <div class="machine-card idle" id="card-Nesting 外">
             <div class="machine-header" style="color: #0d47a1;">🖥️ Nesting 外</div>
-            <div id="content-Nesting 外">
-                <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start js-start-btn" data-machine="Nesting 外">🚀 開始要板</button>
-            </div>
+            <div id="content-Nesting 外"></div>
         </div>
         <div class="machine-card idle" id="card-電子鋸 330">
             <div class="machine-header" style="color: #1b5e20;">🪚 電子鋸 330</div>
-            <div id="content-電子鋸 330">
-                <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start js-start-btn" data-machine="電子鋸 330">🚀 開始要板</button>
-            </div>
+            <div id="content-電子鋸 330"></div>
         </div>
         <div class="machine-card idle" id="card-電子鋸 長風">
             <div class="machine-header" style="color: #1b5e20;">🪚 電子鋸 長風</div>
-            <div id="content-電子鋸 長風">
-                <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                <button class="btn-start js-start-btn" data-machine="電子鋸 長風">🚀 開始要板</button>
-            </div>
+            <div id="content-電子鋸 長風"></div>
         </div>
     </div>
 
-    <button class="btn-export" id="exportBtn">📤 匯出 Excel 檔 (中文版)</button>
+    <div style="font-size: 16px; font-weight: bold; margin: 15px 0 8px 0; border-left: 4px solid #007bff; padding-left: 6px;">📊 正式歷史紀錄與數據分析</div>
+    <button class="btn-export" id="exportBtn">📤 匯出 Excel 檔</button>
 
     <div class="table-responsive">
         <table>
@@ -102,12 +95,12 @@
             <input type="text" id="modalWorkOrder" placeholder="例: A01, A02">
         </div>
         <div class="modal-field">
-            <label style="font-weight:bold; font-size:13px;">張數</label>
+            <label style="font-weight:bold; font-size:13px;">張數 (1張 = 10分鐘)</label>
             <input type="number" id="modalQty" placeholder="請輸入張數" min="1">
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
             <button style="flex:1; height:42px; background:#6c757d; color:white; border:none; border-radius:6px; font-weight:bold;" id="cancelStartBtn">取消</button>
-            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="confirmStartBtn">確認開始</button>
+            <button style="flex:1; height:42px; background:#28a745; color:white; border:none; border-radius:6px; font-weight:bold;" id="confirmStartBtn">確認要板</button>
         </div>
     </div>
 </div>
@@ -115,7 +108,7 @@
 <!-- 修改紀錄彈窗 -->
 <div id="editModal" class="modal">
     <div class="modal-content">
-        <h3 style="margin-top:0; text-align:center;">✏️ 修正紀錄</h3>
+        <h3 style="margin-top:0; text-align:center;">✏️ 修正歷史紀錄</h3>
         <input type="hidden" id="editId">
         <div class="modal-field">
             <label style="font-weight:bold; font-size:13px;">混搭訂單號 / 案名</label>
@@ -142,12 +135,14 @@
 
 <script>
     let boardLogs = JSON.parse(localStorage.getItem('boardLogs')) || [];
+    // 機台狀態記錄：{ machineName: { state: 'waiting'/'sawing', workOrder, qty, startTime, sawStartTime, totalMinutes } }
+    let machineStates = JSON.parse(localStorage.getItem('machineStates')) || {};
     const machineNames = ['Nesting 內', 'Nesting 外', '電子鋸 330', '電子鋸 長風'];
 
     window.addEventListener('DOMContentLoaded', function() {
         bindGlobalEvents();
         refreshView();
-        setInterval(updateTimers, 1000);
+        setInterval(mainTick, 1000);
     });
 
     function bindGlobalEvents() {
@@ -158,18 +153,34 @@
         document.getElementById('exportBtn').addEventListener('click', exportToExcel);
     }
 
-    function updateTimers() {
-        boardLogs.forEach(log => {
-            if (log.endTimeStr === '-') {
-                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
-                const currentMs = new Date().getTime();
-                if (!isNaN(startMs)) {
-                    const mins = ((currentMs - startMs) / 1000 / 60).toFixed(1);
-                    const el = document.getElementById(`dur-${log.id}`);
-                    if (el) el.innerText = `${mins} 分`;
+    // 每秒主循環：檢查裁板倒數計時，結束自動歸零
+    function mainTick() {
+        let changed = false;
+        const now = new Date().getTime();
+
+        machineNames.forEach(mName => {
+            const m = machineStates[mName];
+            if (m && m.state === 'sawing') {
+                const elapsedMs = now - m.sawStartTime;
+                const totalAllowedMs = m.totalMinutes * 60 * 1000;
+
+                if (elapsedMs >= totalAllowedMs) {
+                    // 裁板時間結束！自動回到閒置
+                    delete machineStates[mName];
+                    changed = true;
+                } else {
+                    const remainingMs = totalAllowedMs - elapsedMs;
+                    const remMins = Math.ceil(remainingMs / 1000 / 60);
+                    const el = document.getElementById(`saw-countdown-${mName}`);
+                    if (el) el.innerText = `⏳ 剩餘約 ${remMins} 分`;
                 }
             }
         });
+
+        if (changed) {
+            localStorage.setItem('machineStates', JSON.stringify(machineStates));
+            refreshView();
+        }
     }
 
     function formatDateTime(date) {
@@ -195,43 +206,83 @@
         document.getElementById('startModal').style.display = 'none';
     }
 
+    // 階段 1 ➔ 階段 2：按下開始要板，寫入歷史並進入「等待」狀態
     function confirmStartRequest() {
         const machineName = document.getElementById('targetMachine').value;
         const workOrder = document.getElementById('modalWorkOrder').value.trim();
-        const qty = document.getElementById('modalQty').value.trim();
+        const qty = parseInt(document.getElementById('modalQty').value, 10);
 
-        if (!workOrder || !qty) {
-            alert('請完整輸入訂單號與張數！');
+        if (!workOrder || isNaN(qty) || qty <= 0) {
+            alert('請完整輸入訂單號與有效張數！');
             return;
         }
 
         const now = new Date();
-        boardLogs.unshift({
-            id: Date.now(),
+        const newLogId = Date.now();
+
+        // 1. 寫入正式歷史紀錄
+        const newLog = {
+            id: newLogId,
             date: now.toLocaleDateString(),
             machineType: machineName,
             workOrder: workOrder,
-            qty: parseInt(qty, 10),
+            qty: qty,
             startTimeStr: formatDateTime(now),
             endTimeStr: '-',
             duration: '-'
-        });
+        };
+        boardLogs.unshift(newLog);
+        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
 
-        saveAndRefresh();
+        // 2. 設定機台進入「等待」狀態
+        machineStates[machineName] = {
+            state: 'waiting',
+            logId: newLogId,
+            workOrder: workOrder,
+            qty: qty,
+            totalMinutes: qty * 10
+        };
+        localStorage.setItem('machineStates', JSON.stringify(machineStates));
+
+        refreshView();
         closeStartModal();
     }
 
-    function completeRequest(id) {
-        const log = boardLogs.find(item => item.id === id);
-        if (!log) return;
+    // 階段 2 ➔ 階段 3：按下結束等待（給板結束），更新歷史並進入「裁板倒數」狀態
+    function startSawing(machineName) {
+        const m = machineStates[machineName];
+        if (!m) return;
 
-        if (confirm(`確定要將【${log.machineType}】標為給板結束嗎？`)) {
-            const now = new Date();
+        const now = new Date();
+        
+        // 1. 更新歷史紀錄的「給板結束」時間與花費時間
+        const log = boardLogs.find(item => item.id === m.logId);
+        if (log) {
             log.endTimeStr = formatDateTime(now);
             const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
-            const endMs = now.getTime();
-            log.duration = ((endMs - startMs) / 1000 / 60).toFixed(1);
-            saveAndRefresh();
+            log.duration = ((now.getTime() - startMs) / 1000 / 60).toFixed(1);
+            localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+        }
+
+        // 2. 切換機台狀態為「裁板中 (sawing)」並開始倒數
+        machineStates[machineName] = {
+            state: 'sawing',
+            workOrder: m.workOrder,
+            qty: m.qty,
+            totalMinutes: m.totalMinutes,
+            sawStartTime: now.getTime()
+        };
+        localStorage.setItem('machineStates', JSON.stringify(machineStates));
+
+        refreshView();
+    }
+
+    // 歷史紀錄刪除與修改
+    function deleteLog(id) {
+        if (confirm('確定刪除此正式歷史紀錄？')) {
+            boardLogs = boardLogs.filter(item => item.id !== id);
+            localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+            refreshView();
         }
     }
 
@@ -275,54 +326,57 @@
                 log.duration = '-';
             }
 
-            saveAndRefresh();
+            localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
+            refreshView();
             closeEditModal();
         }
-    }
-
-    function deleteLog(id) {
-        if (confirm('確定刪除此紀錄？')) {
-            boardLogs = boardLogs.filter(item => item.id !== id);
-            saveAndRefresh();
-        }
-    }
-
-    function saveAndRefresh() {
-        localStorage.setItem('boardLogs', JSON.stringify(boardLogs));
-        refreshView();
     }
 
     function refreshView() {
         machineNames.forEach(mName => {
             const card = document.getElementById(`card-${mName}`);
             const content = document.getElementById(`content-${mName}`);
-            const activeTask = boardLogs.find(log => log.machineType === mName && log.endTimeStr === '-');
+            const m = machineStates[mName];
 
-            if (activeTask) {
-                card.className = 'machine-card waiting';
-                const startMs = new Date(activeTask.startTimeStr.replace(/-/g, '/')).getTime();
-                const mins = ((new Date().getTime() - startMs) / 1000 / 60).toFixed(1);
-                content.innerHTML = `
-                    <div style="color: #dc3545; font-weight: bold; font-size: 11px; text-align:center;">⏳ 等待中</div>
-                    <div id="dur-${activeTask.id}" style="color: #d9534f; font-weight: bold; font-size: 16px; margin: 2px 0; text-align:center;">${mins} 分</div>
-                    <button class="btn-complete" id="complete-btn-${activeTask.id}">🏁 結束</button>
-                `;
-                document.getElementById(`complete-btn-${activeTask.id}`).addEventListener('click', () => completeRequest(activeTask.id));
-            } else {
+            if (!m) {
+                // 模式 1：閒置 (Idle)
                 card.className = 'machine-card idle';
                 content.innerHTML = `
                     <div style="font-size: 12px; color: #666; text-align: center; margin: 4px 0;">🟢 閒置中</div>
-                    <button class="btn-start js-start-btn" data-machine="${mName}">🚀 開始要板</button>
+                    <button class="btn-action js-start-btn" data-machine="${mName}" style="background-color: #28a745;">🚀 開始要板</button>
+                `;
+            } else if (m.state === 'waiting') {
+                // 模式 2：等待中 (Waiting - 已記錄歷史)
+                card.className = 'machine-card waiting';
+                content.innerHTML = `
+                    <div style="font-size: 11px; color: #555; text-align:center;">📋 ${m.workOrder} (${m.qty}張)</div>
+                    <div style="color: #b78103; font-weight: bold; font-size: 13px; margin: 2px 0; text-align:center;">🟡 等待給板中</div>
+                    <button class="btn-action" onclick="startSawing('${mName}')" style="background-color: #ffc107; color: #212529;">▶️ 開始裁板</button>
+                `;
+            } else if (m.state === 'sawing') {
+                // 模式 3：裁板中 (Sawing - 自動倒數)
+                card.className = 'machine-card sawing';
+                const elapsedMs = new Date().getTime() - m.sawStartTime;
+                const totalAllowedMs = m.totalMinutes * 60 * 1000;
+                const remainingMs = Math.max(0, totalAllowedMs - elapsedMs);
+                const remMins = Math.ceil(remainingMs / 1000 / 60);
+
+                content.innerHTML = `
+                    <div style="font-size: 11px; color: #555; text-align:center;">📋 ${m.workOrder} (${m.qty}張)</div>
+                    <div id="saw-countdown-${mName}" style="color: #d9534f; font-weight: bold; font-size: 15px; margin: 2px 0; text-align:center;">⏳ 剩餘約 ${remMins} 分</div>
+                    <div style="font-size: 11px; color: #dc3545; text-align: center; font-weight: bold;">🔴 裁板倒數中</div>
                 `;
             }
         });
 
+        // 綁定所有閒置按鈕
         document.querySelectorAll('.js-start-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 openStartModal(this.getAttribute('data-machine'));
             });
         });
 
+        // 刷新歷史表格
         const tbody = document.getElementById('logTableBody');
         tbody.innerHTML = '';
         if (boardLogs.length === 0) {
@@ -333,43 +387,27 @@
         boardLogs.forEach(log => {
             const tr = document.createElement('tr');
             const isWaiting = log.endTimeStr === '-';
-            let mins = log.duration;
-            if (isWaiting) {
-                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
-                mins = ((new Date().getTime() - startMs) / 1000 / 60).toFixed(1);
-            }
 
             tr.innerHTML = `
                 <td>${log.date}</td>
                 <td><strong>${log.machineType}</strong></td>
                 <td>${log.workOrder}</td>
                 <td>${log.qty} 張</td>
-                <td>${isWaiting ? '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px;">⏳等待中</span>' : '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:4px;">✅已完成</span>'}</td>
-                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};" ${isWaiting ? `id="dur-${log.id}"` : ''}>${mins} 分</strong></td>
+                <td>${isWaiting ? '<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px;">🟡等待中</span>' : '<span style="background:#d4edda; color:#155724; padding:2px 6px; border-radius:4px;">✅已完成</span>'}</td>
+                <td><strong style="color: ${isWaiting ? '#d9534f' : '#333'};">${log.duration} 分</strong></td>
                 <td>${log.startTimeStr}</td>
                 <td>${log.endTimeStr}</td>
                 <td>
-                    <button style="background:#ffc107; color:#212529; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold;" class="edit-btn" data-id="${log.id}">✏️</button>
-                    <button style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" class="del-btn" data-id="${log.id}">❌</button>
+                    <button style="background:#ffc107; color:#212529; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold;" onclick="openEditModal(${log.id})">✏️</button>
+                    <button style="background:#dc3545; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="deleteLog(${log.id})">❌</button>
                 </td>
             `;
             tbody.appendChild(tr);
         });
-
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                openEditModal(parseInt(this.getAttribute('data-id'), 10));
-            });
-        });
-        document.querySelectorAll('.del-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                deleteLog(parseInt(this.getAttribute('data-id'), 10));
-            });
-        });
     }
 
     function exportToExcel() {
-        if (boardLogs.length === 0) { alert('沒有紀錄可匯出！'); return; }
+        if (boardLogs.length === 0) { alert('沒有歷史紀錄可匯出！'); return; }
         
         const excelData = boardLogs.map(log => ({
             "日期": log.date,
@@ -379,7 +417,7 @@
             "要板時間(開始)": log.startTimeStr,
             "給板結束(完成)": log.endTimeStr,
             "花費時間(分鐘)": log.duration,
-            "狀態": log.endTimeStr !== "-" ? "已完成" : "等待中"
+            "狀態": log.endTimeStr !== "-" ? "等待中" : "已完成"
         }));
 
         const ws = XLSX.utils.json_to_sheet(excelData);
