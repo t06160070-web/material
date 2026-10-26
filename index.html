@@ -21,7 +21,11 @@
         .machine-header { font-size: 14px; font-weight: bold; text-align: center; margin-bottom: 4px; }
         
         .btn-action { background-color: #28a745; color: white; border: none; padding: 8px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; height: 38px; margin-top: 4px; }
-        .btn-export { background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; width: 100%; height: 45px; margin-bottom: 12px; }
+        
+        /* 頂端功能按鈕區 */
+        .btn-group { display: flex; gap: 8px; margin-bottom: 12px; }
+        .btn-export { flex: 2; background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; height: 45px; }
+        .btn-clear { flex: 1; background-color: #6c757d; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; height: 45px; }
         
         .table-responsive { width: 100%; overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; background: white; min-width: 750px; }
@@ -63,7 +67,12 @@
     </div>
 
     <div style="font-size: 16px; font-weight: bold; margin: 15px 0 8px 0; border-left: 4px solid #007bff; padding-left: 6px;">📊 正式歷史紀錄與數據分析</div>
-    <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔</button>
+    
+    <!-- 匯出與清除按鈕群組 -->
+    <div class="btn-group">
+        <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔</button>
+        <button class="btn-clear" onclick="clearAllHistory()">🗑️ 清除歷史紀錄</button>
+    </div>
 
     <div class="table-responsive">
         <table>
@@ -152,7 +161,6 @@
             if (!m) return;
 
             if (m.state === 'waiting') {
-                // 更新等待中的碼表計時
                 const log = boardLogs.find(item => item.id === m.logId);
                 if (log) {
                     const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
@@ -160,12 +168,10 @@
                     const el = document.getElementById(`wait-timer-${mName}`);
                     if (el) el.innerText = `⏳ 已等待 ${mins} 分`;
                     
-                    // 同時更新下方表格的即時花費
                     const tableEl = document.getElementById(`dur-${m.logId}`);
                     if (tableEl) tableEl.innerText = `${mins} 分`;
                 }
             } else if (m.state === 'sawing') {
-                // 更新裁板倒數計時
                 const elapsedMs = now - m.sawStartTime;
                 const totalAllowedMs = m.totalMinutes * 60 * 1000;
 
@@ -278,6 +284,17 @@
         if (confirm(`確定要將【${machineName}】提前結束並恢復閒置嗎？`)) {
             delete machineStates[machineName];
             localStorage.setItem('machineStates', JSON.stringify(machineStates));
+            refreshView();
+        }
+    }
+
+    // 清除所有歷史與機台狀態
+    function clearAllHistory() {
+        if (confirm('⚠️ 警告：確定要清空所有歷史紀錄與目前的機台狀態嗎？此動作無法復原！')) {
+            boardLogs = [];
+            machineStates = {};
+            localStorage.removeItem('boardLogs');
+            localStorage.removeItem('machineStates');
             refreshView();
         }
     }
