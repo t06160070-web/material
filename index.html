@@ -22,7 +22,7 @@
         
         .btn-action { background-color: #28a745; color: white; border: none; padding: 8px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; height: 38px; margin-top: 4px; }
         
-        /* 頂端功能按鈕區 */
+        /* 將匯出與清除按鈕緊密並排在一起 */
         .btn-group { display: flex; gap: 8px; margin-bottom: 12px; }
         .btn-export { flex: 2; background-color: #17a2b8; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; height: 45px; }
         .btn-clear { flex: 1; background-color: #6c757d; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; height: 45px; }
@@ -68,7 +68,7 @@
 
     <div style="font-size: 16px; font-weight: bold; margin: 15px 0 8px 0; border-left: 4px solid #007bff; padding-left: 6px;">📊 正式歷史紀錄與數據分析</div>
     
-    <!-- 匯出與清除按鈕群組 -->
+    <!-- 匯出與清除按鈕放在同一列緊鄰 -->
     <div class="btn-group">
         <button class="btn-export" onclick="exportToExcel()">📤 匯出 Excel 檔</button>
         <button class="btn-clear" onclick="clearAllHistory()">🗑️ 清除歷史紀錄</button>
@@ -288,7 +288,6 @@
         }
     }
 
-    // 清除所有歷史與機台狀態
     function clearAllHistory() {
         if (confirm('⚠️ 警告：確定要清空所有歷史紀錄與目前的機台狀態嗎？此動作無法復原！')) {
             boardLogs = [];
@@ -428,16 +427,24 @@
     function exportToExcel() {
         if (boardLogs.length === 0) { alert('沒有歷史紀錄可匯出！'); return; }
         
-        const excelData = boardLogs.map(log => ({
-            "日期": log.date,
-            "機台名稱": log.machineType,
-            "混搭訂單號 / 案名": log.workOrder,
-            "張數": log.qty,
-            "要板時間(開始)": log.startTimeStr,
-            "給板結束(完成)": log.endTimeStr,
-            "花費時間(分鐘)": log.duration,
-            "狀態": log.endTimeStr !== "-" ? "等待中" : "已完成"
-        }));
+        const excelData = boardLogs.map(log => {
+            const isWaiting = log.endTimeStr === "-";
+            let durationVal = log.duration;
+            if (isWaiting) {
+                const startMs = new Date(log.startTimeStr.replace(/-/g, '/')).getTime();
+                durationVal = ((new Date().getTime() - startMs) / 1000 / 60).toFixed(1);
+            }
+            return {
+                "日期": log.date,
+                "機台名稱": log.machineType,
+                "混搭訂單號 / 案名": log.workOrder,
+                "張數": log.qty,
+                "狀態": isWaiting ? "等待中" : "已完成",
+                "花費時間(分鐘)": durationVal,
+                "要板時間(開始)": log.startTimeStr,
+                "給板結束(完成)": log.endTimeStr
+            };
+        });
 
         const ws = XLSX.utils.json_to_sheet(excelData);
         const wb = XLSX.utils.book_new();
